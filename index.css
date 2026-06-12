@@ -1,0 +1,517 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 232 41% 14%;
+    --foreground: 0 0% 91%;
+    --card: 222 44% 17%;
+    --card-foreground: 0 0% 91%;
+    --popover: 222 44% 17%;
+    --popover-foreground: 0 0% 91%;
+    --primary: 237 53% 37%;
+    --primary-foreground: 0 0% 94%;
+    --secondary: 210 40% 22%;
+    --secondary-foreground: 0 0% 91%;
+    --muted: 210 40% 22%;
+    --muted-foreground: 208 18% 60%;
+    --accent: 237 53% 37%;
+    --accent-foreground: 0 0% 94%;
+    --destructive: 356 100% 45%;
+    --destructive-foreground: 0 0% 94%;
+    --border: 237 53% 37%;
+    --input: 210 40% 22%;
+    --ring: 51 100% 50%;
+    --radius: 0px;
+    --gold: 51 100% 50%;
+    --green: 120 100% 33%;
+    --red: 356 100% 45%;
+    --crt: 120 100% 60%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: #0F1F0F;
+    color: #F0F0F0;
+    overflow-x: hidden;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer components {
+  .font-pixel {
+    font-family: 'Press Start 2P', cursive;
+  }
+
+  .font-mono-game {
+    font-family: 'Space Mono', monospace;
+  }
+
+  /* 8-bit Grass Soccer Pitch Background */
+  .pixel-bg {
+    background-image:
+      linear-gradient(to bottom, rgba(10, 25, 10, 0.85), rgba(5, 20, 5, 0.90)),
+      url('/grass-bg.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+
+  /* Retro Card - Darker for grass bg legibility */
+  .retro-card {
+    background-color: rgba(12, 18, 30, 0.95);
+    border: 4px solid #2D3192;
+    box-shadow: 4px 4px 0px 0px rgba(0,0,0,0.6);
+    transition: all 0.15s ease;
+  }
+
+  .retro-card:hover {
+    border-color: #3D41A2;
+    box-shadow: 6px 6px 0px 0px rgba(0,0,0,0.6);
+  }
+
+  /* Pixel Button */
+  .pixel-btn {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 10px;
+    text-transform: uppercase;
+    padding: 12px 24px;
+    border: 4px solid #F0F0F0;
+    background-color: #2D3192;
+    color: #F0F0F0;
+    box-shadow: 4px 4px 0px 0px rgba(0,0,0,0.5);
+    cursor: pointer;
+    transition: all 0.1s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    image-rendering: pixelated;
+  }
+
+  .pixel-btn:hover {
+    background-color: #3D41A2;
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.5);
+  }
+
+  .pixel-btn:active {
+    background-color: #E60012;
+    transform: translate(4px, 4px);
+    box-shadow: 0px 0px 0px 0px rgba(0,0,0,0.5);
+  }
+
+  .pixel-btn:disabled {
+    background-color: #0F3460;
+    color: #8899AA;
+    cursor: not-allowed;
+    box-shadow: 4px 4px 0px 0px rgba(0,0,0,0.3);
+    transform: none;
+  }
+
+  .pixel-btn.gold {
+    background-color: #FFD700;
+    color: #1A1A2E;
+    border-color: #FFD700;
+  }
+
+  .pixel-btn.gold:hover {
+    background-color: #FFE44D;
+  }
+
+  .pixel-btn.red {
+    background-color: #E60012;
+    border-color: #F0F0F0;
+  }
+
+  .pixel-btn.red:hover {
+    background-color: #FF1A2E;
+  }
+
+  .pixel-btn.green {
+    background-color: #00AA00;
+    border-color: #F0F0F0;
+  }
+
+  .pixel-btn.green:hover {
+    background-color: #00CC00;
+  }
+
+  .pixel-btn.small {
+    padding: 8px 16px;
+    font-size: 8px;
+  }
+
+  /* CRT Scanline Overlay */
+  .scanlines::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.15),
+      rgba(0, 0, 0, 0.15) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Blink Animation */
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .animate-blink {
+    animation: blink 1.5s infinite;
+  }
+
+  .animate-blink-fast {
+    animation: blink 1s infinite;
+  }
+
+  /* Float Animation */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-5px); }
+  }
+
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  /* Glitch Text Effect */
+  .glitch {
+    position: relative;
+  }
+
+  .glitch::before,
+  .glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .glitch::before {
+    left: 2px;
+    text-shadow: -2px 0 #E60012;
+    clip-path: inset(0 0 50% 0);
+    animation: glitch-anim 4s infinite linear alternate-reverse;
+  }
+
+  .glitch::after {
+    left: -2px;
+    text-shadow: 2px 0 #2D3192;
+    clip-path: inset(50% 0 0 0);
+    animation: glitch-anim 3s infinite linear alternate-reverse;
+  }
+
+  @keyframes glitch-anim {
+    0% { clip-path: inset(10% 0 60% 0); }
+    20% { clip-path: inset(40% 0 20% 0); }
+    40% { clip-path: inset(80% 0 5% 0); }
+    60% { clip-path: inset(30% 0 40% 0); }
+    80% { clip-path: inset(60% 0 15% 0); }
+    100% { clip-path: inset(20% 0 50% 0); }
+  }
+
+  /* Pixel Floating Particles */
+  @keyframes pixelFloat {
+    0% { transform: translateY(100vh) translateX(0); opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { transform: translateY(-100px) translateX(30px); opacity: 0; }
+  }
+
+  /* ========================================================================
+     DEGEN DEN - Smoky Backroom Styles
+     ======================================================================== */
+
+  .degen-den-bg {
+    background:
+      radial-gradient(ellipse at 30% 80%, rgba(120, 60, 20, 0.25) 0%, transparent 60%),
+      radial-gradient(ellipse at 70% 20%, rgba(80, 40, 10, 0.2) 0%, transparent 50%),
+      linear-gradient(to bottom, #1a0e08 0%, #0d0704 50%, #1a0e08 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Dark wood panel texture overlay */
+  .degen-den-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent 78px,
+        rgba(60, 30, 10, 0.3) 78px,
+        rgba(60, 30, 10, 0.3) 80px
+      );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* Green felt table surface */
+  .felt-table {
+    background:
+      radial-gradient(ellipse at center, rgba(20, 80, 40, 0.6) 0%, rgba(10, 50, 25, 0.8) 70%, rgba(5, 30, 15, 0.95) 100%),
+      repeating-conic-gradient(rgba(15, 60, 30, 0.15) 0% 25%, transparent 0% 50%) 50% 50% / 4px 4px;
+    border: 3px solid #5a3a1a;
+    box-shadow:
+      inset 0 0 30px rgba(0, 0, 0, 0.6),
+      0 4px 12px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Warm amber glow text */
+  .amber-glow {
+    color: #d4a853;
+    text-shadow:
+      0 0 10px rgba(212, 168, 83, 0.5),
+      0 0 20px rgba(212, 168, 83, 0.3),
+      0 0 40px rgba(180, 120, 40, 0.15);
+  }
+
+  /* Smoke particles */
+  @keyframes smokeRise {
+    0% {
+      transform: translateY(100%) translateX(0) scale(1);
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.6;
+    }
+    50% {
+      transform: translateY(40%) translateX(20px) scale(1.8);
+      opacity: 0.3;
+    }
+    90% {
+      opacity: 0.1;
+    }
+    100% {
+      transform: translateY(-20%) translateX(-30px) scale(3);
+      opacity: 0;
+    }
+  }
+
+  .smoke-particle {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(180, 160, 140, 0.4) 0%, rgba(140, 120, 100, 0.2) 40%, transparent 70%);
+    filter: blur(8px);
+    animation: smokeRise 8s ease-out infinite;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .smoke-particle:nth-child(1) { width: 80px; height: 80px; left: 10%; animation-delay: 0s; animation-duration: 10s; }
+  .smoke-particle:nth-child(2) { width: 60px; height: 60px; left: 25%; animation-delay: 2s; animation-duration: 12s; }
+  .smoke-particle:nth-child(3) { width: 100px; height: 100px; left: 40%; animation-delay: 4s; animation-duration: 9s; }
+  .smoke-particle:nth-child(4) { width: 50px; height: 50px; left: 55%; animation-delay: 1s; animation-duration: 11s; }
+  .smoke-particle:nth-child(5) { width: 70px; height: 70px; left: 70%; animation-delay: 3s; animation-duration: 13s; }
+  .smoke-particle:nth-child(6) { width: 90px; height: 90px; left: 85%; animation-delay: 5s; animation-duration: 10s; }
+  .smoke-particle:nth-child(7) { width: 45px; height: 45px; left: 15%; animation-delay: 6s; animation-duration: 14s; }
+  .smoke-particle:nth-child(8) { width: 75px; height: 75px; left: 60%; animation-delay: 7s; animation-duration: 11s; }
+
+  /* Flickering candle light effect */
+  @keyframes candleFlicker {
+    0%, 100% { opacity: 0.8; box-shadow: 0 0 10px rgba(255, 180, 60, 0.4), 0 0 20px rgba(255, 160, 40, 0.2); }
+    25% { opacity: 1; box-shadow: 0 0 12px rgba(255, 190, 70, 0.5), 0 0 24px rgba(255, 170, 50, 0.25); }
+    50% { opacity: 0.7; box-shadow: 0 0 8px rgba(255, 170, 50, 0.35), 0 0 18px rgba(255, 150, 30, 0.18); }
+    75% { opacity: 0.95; box-shadow: 0 0 14px rgba(255, 200, 80, 0.55), 0 0 28px rgba(255, 180, 60, 0.3); }
+  }
+
+  .candle-light {
+    animation: candleFlicker 3s ease-in-out infinite;
+  }
+
+  /* Password gate shake */
+  @keyframes shakeGate {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+  }
+
+  .gate-shake {
+    animation: shakeGate 0.4s ease-in-out;
+  }
+
+  /* Wager card - backroom style */
+  .wager-card {
+    background: rgba(20, 12, 8, 0.92);
+    border: 2px solid #5a3a1a;
+    box-shadow:
+      inset 0 1px 0 rgba(212, 168, 83, 0.1),
+      0 2px 8px rgba(0, 0, 0, 0.4);
+    transition: all 0.15s ease;
+  }
+
+  .wager-card:hover {
+    border-color: #8a6a3a;
+    box-shadow:
+      inset 0 1px 0 rgba(212, 168, 83, 0.15),
+      0 4px 12px rgba(0, 0, 0, 0.5);
+  }
+
+  .wager-card.pending { border-left: 4px solid #c9a227; }
+  .wager-card.accepted { border-left: 4px solid #2a9d8f; }
+  .wager-card.resolved { border-left: 4px solid #e76f51; }
+  .wager-card.cancelled { border-left: 4px solid #666; opacity: 0.6; }
+
+  /* Den retro button - warm amber variant */
+  .pixel-btn.amber {
+    background-color: #8B6914;
+    color: #1a0e08;
+    border-color: #d4a853;
+  }
+
+  .pixel-btn.amber:hover {
+    background-color: #a67c1a;
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.5);
+  }
+
+  /* Den input style */
+  .den-input {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 10px;
+    background-color: rgba(15, 8, 5, 0.95);
+    border: 3px solid #5a3a1a;
+    color: #d4c4a0;
+    padding: 12px;
+    caret-color: #d4a853;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+
+  .den-input:focus {
+    border-color: #d4a853;
+    box-shadow: 0 0 8px rgba(212, 168, 83, 0.3);
+  }
+
+  .den-input::placeholder {
+    color: #6a5a4a;
+  }
+
+  /* CRT scanline variant for den */
+  .scanlines-den::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(60, 40, 20, 0.12),
+      rgba(60, 40, 20, 0.12) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Section Entrance */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .fade-in-up {
+    animation: fadeInUp 0.4s ease-out forwards;
+  }
+
+  /* Score Change */
+  @keyframes scorePop {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.3); color: #00AA00; }
+    100% { transform: scale(1); }
+  }
+
+  .score-pop {
+    animation: scorePop 0.8s ease-out;
+  }
+
+  /* Stagger delays */
+  .stagger-1 { animation-delay: 0.1s; }
+  .stagger-2 { animation-delay: 0.2s; }
+  .stagger-3 { animation-delay: 0.3s; }
+  .stagger-4 { animation-delay: 0.4s; }
+  .stagger-5 { animation-delay: 0.5s; }
+  .stagger-6 { animation-delay: 0.6s; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #1A1A2E;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #2D3192;
+    border: 2px solid #1A1A2E;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3D41A2;
+  }
+
+  /* Input Styling */
+  .pixel-input {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 12px;
+    background-color: rgba(12, 18, 30, 0.95);
+    border: 4px solid #2D3192;
+    color: #F0F0F0;
+    padding: 16px;
+    text-align: center;
+    text-transform: uppercase;
+    caret-color: #33FF33;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+
+  .pixel-input:focus {
+    border-color: #FFD700;
+    box-shadow: 0 0 10px rgba(255,215,0,0.3);
+  }
+
+  .pixel-input::placeholder {
+    color: #8899AA;
+  }
+
+  /* Morph Animation - Beer Mug to World Cup Trophy */
+  .morph-frame {
+    opacity: 0;
+    animation: morphCycle 1.5s infinite ease-in-out;
+    image-rendering: pixelated;
+    will-change: opacity, transform;
+  }
+
+  @keyframes morphCycle {
+    0% { opacity: 0; transform: scale(0.9) rotate(-5deg) translateY(5px); filter: brightness(0.7); }
+    12% { opacity: 1; transform: scale(1) rotate(0deg) translateY(0); filter: brightness(1); }
+    35% { opacity: 1; transform: scale(1.03) rotate(0deg) translateY(-3px); filter: brightness(1.05); }
+    50% { opacity: 0; transform: scale(1.1) rotate(3deg) translateY(-6px); filter: brightness(1.2); }
+    100% { opacity: 0; transform: scale(0.9) rotate(0deg) translateY(5px); filter: brightness(0.7); }
+  }
+}

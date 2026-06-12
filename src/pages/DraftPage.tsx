@@ -11,13 +11,12 @@ const TIER_ICONS = { favorite: Crown, mid: Star, underdog: CircleDot };
 
 export default function DraftPage() {
   const navigate = useNavigate();
-  const { state, submitTeams, submitTopScorer, setUser, addManager } = useGame();
+  const { state, submitTeams, submitTopScorer } = useGame();
   const [selected, setSelected] = useState<string[]>([]);
-  const [teamName, setTeamName] = useState('');
-  const [realName, setRealName] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [topScorerName, setTopScorerName] = useState('');
   const [topScorerCountry, setTopScorerCountry] = useState('');
+  const [topScorerEditMode, setTopScorerEditMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
   // Amendment deadline: 1 hour before kickoff = June 11, 2026 14:00 ET
@@ -61,57 +60,51 @@ export default function DraftPage() {
     }
   };
 
-  const handleSubmit = () => {
+  const isDraftLocked = state.settings.draftLocked;
+
+  const handleSubmit = async () => {
+    if (state.settings.draftLocked) return;
     if (!isValid || !currentManager) return;
-    submitTeams(currentManager.id, selected);
+    await submitTeams(currentManager.id, selected);
     setShowConfirm(false);
     setIsEditing(false);
   };
 
   const handleStartEdit = () => {
+    if (state.settings.draftLocked) return;
     if (!canAmend || !currentManager) return;
     setSelected([...currentManager.teamCodes]);
     setIsEditing(true);
   };
 
-  const handleSubmitTopScorer = () => {
+  const handleSubmitTopScorer = async () => {
     if (!topScorerName.trim() || !topScorerCountry.trim()) return;
     const mgr = currentManager;
-    if (mgr) submitTopScorer(mgr.id, { name: topScorerName.trim(), country: topScorerCountry.trim() });
-  };
-
-  const handleEnterName = () => {
-    if (!teamName.trim() || !realName.trim()) return;
-    const upperTeam = teamName.trim().toUpperCase().slice(0, 16);
-    const upperReal = realName.trim().toUpperCase().slice(0, 12);
-    setUser(upperTeam);
-    const existing = state.managers.find(m => m.name === upperTeam);
-    if (!existing) addManager(upperTeam, upperTeam, upperReal);
+    if (mgr) await submitTopScorer(mgr.id, { name: topScorerName.trim(), country: topScorerCountry.trim() });
   };
 
   // NOT LOGGED IN
   if (!state.currentUser) {
     return (
       <div className="min-h-screen px-4 py-6 flex flex-col items-center justify-center">
-        <h1 className="font-pixel text-lg mb-4" style={{ color: '#FFD700' }}>ENTER DRAFT</h1>
-        <p className="font-pixel text-[8px] mb-4 text-center" style={{ color: '#8899AA' }}>
-          ENTER YOUR TEAM NAME AND REAL NAME TO START DRAFTING
+        <h1 className="font-pixel text-lg mb-4" style={{ color: '#FFD700' }}>NOT LOGGED IN</h1>
+        <p className="font-pixel text-[8px] mb-4 text-center" style={{ color: '#AABBCC' }}>
+          CREATE AN ACCOUNT OR LOG IN TO ACCESS THE DRAFT
         </p>
-        <input type="text" value={teamName} onChange={e => setTeamName(e.target.value.toUpperCase())}
-          placeholder="TEAM NAME (e.g. BEER FC)" maxLength={16} className="pixel-input max-w-sm mb-3 text-[10px]" />
-        <input type="text" value={realName} onChange={e => setRealName(e.target.value.toUpperCase())}
-          placeholder="YOUR REAL NAME" maxLength={12} className="pixel-input max-w-sm mb-4 text-[10px]" />
-        <button onClick={handleEnterName} disabled={!teamName.trim() || !realName.trim()} className="pixel-btn gold">ENTER &#8594;</button>
+        <button onClick={() => navigate('/')} className="pixel-btn gold">GO TO HOME PAGE &#8594;</button>
       </div>
     );
   }
 
-  // DRAFT LOCKED
+  // DRAFT LOCKED — block all unsubmitted users entirely
   if (state.settings.draftLocked && !hasSubmitted) {
     return (
       <div className="min-h-screen px-4 py-6 flex flex-col items-center justify-center">
         <Lock className="w-12 h-12 mb-4" style={{ color: '#E60012' }} />
         <h1 className="font-pixel text-lg mb-4" style={{ color: '#E60012' }}>DRAFT LOCKED</h1>
+        <p className="font-pixel text-[8px] mb-4 text-center" style={{ color: '#AABBCC' }}>
+          THE ADMIN HAS LOCKED THE DRAFT. NO NEW ROSTERS CAN BE SUBMITTED.
+        </p>
         <button onClick={() => navigate('/standings')} className="pixel-btn">VIEW STANDINGS</button>
       </div>
     );
@@ -123,8 +116,23 @@ export default function DraftPage() {
     return (
       <div className="min-h-screen px-4 py-6">
         <div className="max-w-2xl mx-auto text-center">
+          {/* DRAFT LOCKED BANNER */}
+          {state.settings.draftLocked && (
+            <div className="mb-4 p-3 flex items-center justify-center gap-2" style={{ background: 'rgba(230,0,18,0.15)', border: '2px solid #E60012' }}>
+              <Lock className="w-4 h-4" style={{ color: '#E60012' }} />
+              <span className="font-pixel text-[10px]" style={{ color: '#E60012' }}>DRAFT IS LOCKED — EDITING DISABLED</span>
+            </div>
+          )}
           <Check className="w-12 h-12 mx-auto mb-4" style={{ color: '#00AA00' }} />
           <h1 className="font-pixel text-lg mb-2" style={{ color: '#00AA00' }}>ROSTER SUBMITTED!</h1>
+          {/* Submission Confirmation */}
+          <div className="retro-card p-4 mb-4" style={{ borderColor: '#00AA00' }}>
+            <p className="font-pixel text-[8px] mb-1" style={{ color: '#00AA00' }}>&#10003; ROSTER LOCKED IN</p>
+            <p className="font-pixel text-[7px] mt-1" style={{ color: '#AABBCC' }}>
+              Log in with your Team Name + 4-digit PIN to edit before kickoff.
+            </p>
+          </div>
+
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-6">
             {submittedTeams.map(code => {
               const team = allTeams.find(t => t.code === code);
@@ -146,11 +154,15 @@ export default function DraftPage() {
               CORRECT GUESS = +{state.settings.scoring.topScorerBonus} BONUS POINTS<br />
               Based on the FIFA Golden Boot winner (most goals in the tournament)
             </p>
-            {hasTopScorerGuess ? (
+            {hasTopScorerGuess && !topScorerEditMode ? (
               <div className="text-center">
                 <div className="font-pixel text-sm mb-1" style={{ color: '#00AA00' }}>✓ LOCKED IN</div>
                 <div className="font-pixel text-[10px]" style={{ color: '#E8E8E8' }}>{currentManager!.topScorerGuess!.name}</div>
                 <div className="font-pixel text-[8px]" style={{ color: '#8899AA' }}>({currentManager!.topScorerGuess!.country})</div>
+                {canAmend && (
+                  <button onClick={() => { setTopScorerEditMode(true); setTopScorerName(currentManager!.topScorerGuess!.name); setTopScorerCountry(currentManager!.topScorerGuess!.country); }}
+                    className="font-pixel text-[8px] mt-3 px-3 py-1" style={{ backgroundColor: '#2D3192', color: '#FFD700' }}>EDIT PICK</button>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -158,14 +170,23 @@ export default function DraftPage() {
                   placeholder="PLAYER NAME (e.g. Kylian Mbappe)" className="pixel-input w-full text-[10px] text-left" />
                 <input type="text" value={topScorerCountry} onChange={e => setTopScorerCountry(e.target.value)}
                   placeholder="COUNTRY (e.g. France)" className="pixel-input w-full text-[10px] text-left" />
-                <button onClick={handleSubmitTopScorer}
-                  disabled={!topScorerName.trim() || !topScorerCountry.trim()}
-                  className="pixel-btn gold w-full">SUBMIT TOP SCORER PICK</button>
+                <div className="flex gap-2">
+                  <button onClick={handleSubmitTopScorer}
+                    disabled={!topScorerName.trim() || !topScorerCountry.trim()}
+                    className="pixel-btn gold flex-1">{hasTopScorerGuess ? 'UPDATE PICK' : 'SUBMIT TOP SCORER PICK'}</button>
+                  {hasTopScorerGuess && (
+                    <button onClick={() => setTopScorerEditMode(false)} className="pixel-btn red small">CANCEL</button>
+                  )}
+                </div>
               </div>
             )}
           </div>
           <div className="flex flex-col items-center gap-3 mt-6">
-            {canAmend ? (
+            {state.settings.draftLocked ? (
+              <p className="font-pixel text-[8px]" style={{ color: '#E60012' }}>
+                DRAFT LOCKED BY ADMIN — NO EDITING
+              </p>
+            ) : canAmend ? (
               <>
                 <button onClick={handleStartEdit} className="pixel-btn gold">EDIT ROSTER</button>
                 <p className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>
@@ -188,13 +209,25 @@ export default function DraftPage() {
   return (
     <div className="min-h-screen px-4 py-6">
       <div className="max-w-5xl mx-auto">
+        {/* DRAFT LOCKED BANNER — full width, prominent */}
+        {isDraftLocked && (
+          <div className="mb-4 p-4 flex items-center justify-center gap-3" style={{ background: 'rgba(230,0,18,0.2)', border: '3px solid #E60012', boxShadow: '0 0 16px rgba(230,0,18,0.3)' }}>
+            <Lock className="w-6 h-6" style={{ color: '#E60012' }} />
+            <span className="font-pixel text-xs" style={{ color: '#E60012' }}>DRAFT LOCKED BY ADMIN — NO CHANGES ALLOWED</span>
+          </div>
+        )}
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-          <div>
-            <h1 className="font-pixel text-lg md:text-2xl" style={{ color: '#FFD700' }}>DRAFT YOUR TEAMS</h1>
-            <p className="font-pixel text-[8px] mt-1" style={{ color: '#8899AA' }}>
-              SELECT EXACTLY 12 TEAMS &middot; 2 FAV &middot; 4 MID &middot; 6 DOG
-            </p>
+          <div className="flex items-center gap-3">
+            {isDraftLocked && <Lock className="w-6 h-6" style={{ color: '#E60012' }} />}
+            <div>
+              <h1 className="font-pixel text-lg md:text-2xl" style={{ color: isDraftLocked ? '#E60012' : '#FFD700' }}>
+                {isDraftLocked ? 'DRAFT LOCKED' : 'DRAFT YOUR TEAMS'}
+              </h1>
+              <p className="font-pixel text-[8px] mt-1" style={{ color: '#8899AA' }}>
+                SELECT EXACTLY 12 TEAMS &middot; 2 FAV &middot; 4 MID &middot; 6 DOG
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             {(['favorite', 'mid', 'underdog'] as Tier[]).map(tier => {
@@ -248,7 +281,7 @@ export default function DraftPage() {
         <div className="mb-4 p-3 flex items-start gap-2" style={{ backgroundColor: 'rgba(230,0,18,0.15)', borderLeft: '4px solid #E60012' }}>
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#E60012' }} />
           <span className="font-pixel text-[8px]" style={{ color: '#E60012' }}>
-            YOU HAVE 48 HOURS TO PAY HKD 250 AFTER JOINING. FAIL TO PAY = BOOTED. NO EXCEPTIONS.
+            YOU HAVE 48 HOURS TO PAY HKD 200 AFTER JOINING. FAIL TO PAY = BOOTED. NO EXCEPTIONS.
           </span>
         </div>
 
@@ -264,21 +297,31 @@ export default function DraftPage() {
 
         {/* Selected summary */}
         {selected.length > 0 && (
-          <div className="retro-card p-3 mb-6" style={{ borderColor: '#FFD700' }}>
+          <div className="retro-card p-3 mb-6" style={{ borderColor: isDraftLocked ? '#E60012' : '#FFD700', opacity: isDraftLocked ? 0.6 : 1 }}>
             <div className="flex items-center justify-between mb-2">
-              <span className="font-pixel text-[10px]" style={{ color: '#FFD700' }}>YOUR PICKS</span>
-              <button onClick={() => setSelected([])} className="font-pixel text-[8px]" style={{ color: '#E60012' }}>CLEAR ALL</button>
+              <span className="font-pixel text-[10px]" style={{ color: isDraftLocked ? '#E60012' : '#FFD700' }}>
+                {isDraftLocked ? 'LOCKED — CANNOT MODIFY' : 'YOUR PICKS'}
+              </span>
+              {!isDraftLocked && (
+                <button onClick={() => setSelected([])} className="font-pixel text-[8px]" style={{ color: '#E60012' }}>CLEAR ALL</button>
+              )}
             </div>
             <div className="flex flex-wrap gap-1">
               {selected.map(code => {
                 const team = allTeams.find(t => t.code === code);
                 return (
                   <button key={code} onClick={() => toggleTeam(code)}
+                    disabled={isDraftLocked}
                     className="flex items-center gap-1 px-2 py-1 transition-colors"
-                    style={{ backgroundColor: TIER_COLORS[team?.tier || 'underdog'], border: 'none' }}>
+                    style={{
+                      backgroundColor: TIER_COLORS[team?.tier || 'underdog'],
+                      border: 'none',
+                      opacity: isDraftLocked ? 0.6 : 1,
+                      cursor: isDraftLocked ? 'not-allowed' : 'pointer',
+                    }}>
                     <span className="text-sm">{TEAM_FLAGS[code]}</span>
                     <span className="font-pixel text-[7px]" style={{ color: '#1A1A2E' }}>{code}</span>
-                    <X className="w-2 h-2 ml-1" style={{ color: '#1A1A2E' }} />
+                    {!isDraftLocked && <X className="w-2 h-2 ml-1" style={{ color: '#1A1A2E' }} />}
                   </button>
                 );
               })}
@@ -312,7 +355,7 @@ export default function DraftPage() {
                 {tierTeams.map(team => {
                   const isSelected = selected.includes(team.code);
                   const isUsed = usedTeams.includes(team.code);
-                  const isDisabled = isUsed || (!isSelected && count >= limit);
+                  const isDisabled = isDraftLocked || isUsed || (!isSelected && count >= limit);
                   return (
                     <button key={team.code} onClick={() => toggleTeam(team.code)}
                       disabled={isDisabled}
@@ -320,8 +363,9 @@ export default function DraftPage() {
                       style={{
                         borderColor: isSelected ? TIER_COLORS[tier] : '#0F3460',
                         borderWidth: isSelected ? '3px' : '2px',
-                        opacity: isDisabled && !isSelected ? 0.3 : 1,
+                        opacity: isDisabled && !isSelected ? 0.25 : 1,
                         backgroundColor: isSelected ? 'rgba(255,215,0,0.1)' : '#16213E',
+                        cursor: isDraftLocked ? 'not-allowed' : 'pointer',
                       }}>
                       <span className="text-lg">{team.flag}</span>
                       <div className="flex-1 min-w-0">
@@ -337,6 +381,37 @@ export default function DraftPage() {
             </div>
           );
         })}
+
+        {/* Bottom Sticky Submit Bar */}
+        <div className="sticky bottom-0 left-0 right-0 z-30 py-3 px-4 -mx-4"
+          style={{ backgroundColor: 'rgba(10,15,25,0.95)', borderTop: '4px solid #2D3192', backdropFilter: 'blur(4px)' }}>
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="font-pixel text-[10px]" style={{ color: selected.length === 12 ? '#00AA00' : '#E8E8E8' }}>
+                {selected.length}/12
+              </span>
+              <span className="font-pixel text-[7px] hidden sm:inline" style={{ color: '#AABBCC' }}>
+                <span style={{ color: '#FFD700' }}>{counts.favorite}F</span>
+                {' '}<span style={{ color: '#2D3192' }}>{counts.mid}M</span>
+                {' '}<span style={{ color: '#8899AA' }}>{counts.underdog}U</span>
+              </span>
+            </div>
+            {isDraftLocked ? (
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4" style={{ color: '#E60012' }} />
+                <span className="font-pixel text-[9px]" style={{ color: '#E60012' }}>LOCKED</span>
+              </div>
+            ) : isValid ? (
+              <button onClick={() => setShowConfirm(true)} className="pixel-btn gold small">
+                LOCK IN TEAM
+              </button>
+            ) : (
+              <span className="font-pixel text-[7px]" style={{ color: '#AABBCC' }}>
+                {selected.length < 12 ? `PICK ${12 - selected.length} MORE` : 'CHECK TIERS'}
+              </span>
+            )}
+          </div>
+        </div>
 
         {/* Confirm Modal */}
         {showConfirm && (
@@ -358,7 +433,13 @@ export default function DraftPage() {
               </div>
               <div className="flex gap-3">
                 <button onClick={() => setShowConfirm(false)} className="pixel-btn red flex-1 small">CANCEL</button>
-                <button onClick={handleSubmit} className="pixel-btn gold flex-1">LOCK IN!</button>
+                {isDraftLocked ? (
+                  <button disabled className="pixel-btn flex-1" style={{ backgroundColor: '#333', color: '#666', borderColor: '#333', cursor: 'not-allowed' }}>
+                    <Lock className="w-3 h-3 inline mr-1" />LOCKED
+                  </button>
+                ) : (
+                  <button onClick={handleSubmit} className="pixel-btn gold flex-1">LOCK IN TEAM</button>
+                )}
               </div>
             </div>
           </div>
