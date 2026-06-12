@@ -10,6 +10,9 @@ import ManagerPage from '@/pages/ManagerPage';
 import RulesPage from '@/pages/RulesPage';
 import AdminPage from '@/pages/AdminPage';
 import PayoutPage from '@/pages/PayoutPage';
+import TestPage from '@/pages/TestPage';
+import DegenDenPage from '@/pages/DegenDenPage';
+import TrainingGroundPage from '@/pages/TrainingGroundPage';
 
 function App() {
   return (
@@ -26,6 +29,9 @@ function App() {
             <Route path="/rules" element={<RulesPage />} />
             <Route path="/payout" element={<PayoutPage />} />
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/test" element={<TestPage />} />
+            <Route path="/degen-den" element={<DegenDenPage />} />
+            <Route path="/training-ground" element={<TrainingGroundPage />} />
           </Routes>
         </main>
         <Footer />

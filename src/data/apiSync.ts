@@ -14,8 +14,8 @@ export interface ApiConfig {
 }
 
 export const DEFAULT_API_CONFIG: ApiConfig = {
-  provider: 'manual',
-  apiKey: '',
+  provider: 'api-football',
+  apiKey: 'dd99c54832c151667246c2e2cb180e01',
   autoSync: false,
   syncIntervalHours: 6,
   lastSync: null,

@@ -46,7 +46,7 @@ export default function StandingsPage() {
           </div>
           <div className="retro-card p-3 text-center" style={{ borderColor: '#00AA00' }}>
             <Trophy className="w-4 h-4 mx-auto mb-1" style={{ color: '#00AA00' }} />
-            <div className="font-pixel text-lg" style={{ color: '#00AA00' }}>
+            <div className="font-pixel text-[9px] md:text-sm truncate max-w-full" style={{ color: '#00AA00' }}>
               {managerScores[0]?.name || '---'}
             </div>
             <div className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>TOP</div>

@@ -86,6 +86,118 @@ export function getTeamsByTier(tier: Tier, customTiers?: Record<string, Tier>): 
   return getAllTeams(customTiers).filter(t => t.tier === tier);
 }
 
+// Known players database for autocomplete
+export interface KnownPlayer {
+  name: string;
+  country: string;
+  countryCode: string;
+  position: string;
+}
+
+export const KNOWN_PLAYERS: KnownPlayer[] = [
+  // Argentina
+  { name: 'Lionel Messi', country: 'Argentina', countryCode: 'ARG', position: 'FW' },
+  { name: 'Lautaro Martinez', country: 'Argentina', countryCode: 'ARG', position: 'FW' },
+  { name: 'Julian Alvarez', country: 'Argentina', countryCode: 'ARG', position: 'FW' },
+  { name: 'Enzo Fernandez', country: 'Argentina', countryCode: 'ARG', position: 'MF' },
+  { name: 'Alexis Mac Allister', country: 'Argentina', countryCode: 'ARG', position: 'MF' },
+  // Brazil
+  { name: 'Vinicius Jr', country: 'Brazil', countryCode: 'BRA', position: 'FW' },
+  { name: 'Rodrygo', country: 'Brazil', countryCode: 'BRA', position: 'FW' },
+  { name: 'Endrick', country: 'Brazil', countryCode: 'BRA', position: 'FW' },
+  { name: 'Raphinha', country: 'Brazil', countryCode: 'BRA', position: 'FW' },
+  // France
+  { name: 'Kylian Mbappe', country: 'France', countryCode: 'FRA', position: 'FW' },
+  { name: 'Antoine Griezmann', country: 'France', countryCode: 'FRA', position: 'FW' },
+  { name: 'Ousmane Dembele', country: 'France', countryCode: 'FRA', position: 'FW' },
+  { name: 'Randal Kolo Muani', country: 'France', countryCode: 'FRA', position: 'FW' },
+  // England
+  { name: 'Harry Kane', country: 'England', countryCode: 'ENG', position: 'FW' },
+  { name: 'Bukayo Saka', country: 'England', countryCode: 'ENG', position: 'FW' },
+  { name: 'Jude Bellingham', country: 'England', countryCode: 'ENG', position: 'MF' },
+  { name: 'Phil Foden', country: 'England', countryCode: 'ENG', position: 'FW' },
+  { name: 'Cole Palmer', country: 'England', countryCode: 'ENG', position: 'FW' },
+  // Portugal
+  { name: 'Cristiano Ronaldo', country: 'Portugal', countryCode: 'POR', position: 'FW' },
+  { name: 'Diogo Jota', country: 'Portugal', countryCode: 'POR', position: 'FW' },
+  // Spain
+  { name: 'Lamine Yamal', country: 'Spain', countryCode: 'ESP', position: 'FW' },
+  { name: 'Alvaro Morata', country: 'Spain', countryCode: 'ESP', position: 'FW' },
+  { name: 'Nico Williams', country: 'Spain', countryCode: 'ESP', position: 'FW' },
+  // Germany
+  { name: 'Jamal Musiala', country: 'Germany', countryCode: 'GER', position: 'MF' },
+  { name: 'Florian Wirtz', country: 'Germany', countryCode: 'GER', position: 'MF' },
+  { name: 'Kai Havertz', country: 'Germany', countryCode: 'GER', position: 'FW' },
+  { name: 'Niclas Fullkrug', country: 'Germany', countryCode: 'GER', position: 'FW' },
+  // Netherlands
+  { name: 'Cody Gakpo', country: 'Netherlands', countryCode: 'NED', position: 'FW' },
+  { name: 'Memphis Depay', country: 'Netherlands', countryCode: 'NED', position: 'FW' },
+  { name: 'Xavi Simons', country: 'Netherlands', countryCode: 'NED', position: 'FW' },
+  // Belgium
+  { name: 'Romelu Lukaku', country: 'Belgium', countryCode: 'BEL', position: 'FW' },
+  { name: 'Kevin De Bruyne', country: 'Belgium', countryCode: 'BEL', position: 'MF' },
+  { name: 'Jeremy Doku', country: 'Belgium', countryCode: 'BEL', position: 'FW' },
+  // Croatia
+  { name: 'Luka Modric', country: 'Croatia', countryCode: 'CRO', position: 'MF' },
+  { name: 'Andrej Kramaric', country: 'Croatia', countryCode: 'CRO', position: 'FW' },
+  // Uruguay
+  { name: 'Darwin Nunez', country: 'Uruguay', countryCode: 'URU', position: 'FW' },
+  { name: 'Federico Valverde', country: 'Uruguay', countryCode: 'URU', position: 'MF' },
+  // Colombia
+  { name: 'Luis Diaz', country: 'Colombia', countryCode: 'COL', position: 'FW' },
+  { name: 'James Rodriguez', country: 'Colombia', countryCode: 'COL', position: 'MF' },
+  { name: 'Jhon Duran', country: 'Colombia', countryCode: 'COL', position: 'FW' },
+  // Japan
+  { name: 'Takefusa Kubo', country: 'Japan', countryCode: 'JPN', position: 'FW' },
+  { name: 'Kaoru Mitoma', country: 'Japan', countryCode: 'JPN', position: 'FW' },
+  // USA
+  { name: 'Christian Pulisic', country: 'USA', countryCode: 'USA', position: 'FW' },
+  { name: 'Folarin Balogun', country: 'USA', countryCode: 'USA', position: 'FW' },
+  // Mexico
+  { name: 'Santiago Gimenez', country: 'Mexico', countryCode: 'MEX', position: 'FW' },
+  { name: 'Raul Jimenez', country: 'Mexico', countryCode: 'MEX', position: 'FW' },
+  // Morocco
+  { name: 'Achraf Hakimi', country: 'Morocco', countryCode: 'MAR', position: 'DF' },
+  { name: 'Youssef En-Nesyri', country: 'Morocco', countryCode: 'MAR', position: 'FW' },
+  // Other notable players
+  { name: 'Son Heung-min', country: 'Korea Republic', countryCode: 'KOR', position: 'FW' },
+  { name: 'Mohamed Salah', country: 'Egypt', countryCode: 'EGY', position: 'FW' },
+  { name: 'Victor Osimhen', country: 'Nigeria', countryCode: 'NGA', position: 'FW' },
+  { name: 'Erling Haaland', country: 'Norway', countryCode: 'NOR', position: 'FW' },
+  { name: 'Martin Odegaard', country: 'Norway', countryCode: 'NOR', position: 'MF' },
+  { name: 'Sardar Azmoun', country: 'IR Iran', countryCode: 'IRN', position: 'FW' },
+  { name: 'Mehdi Taremi', country: 'IR Iran', countryCode: 'IRN', position: 'FW' },
+  { name: 'Wataru Endo', country: 'Japan', countryCode: 'JPN', position: 'MF' },
+  { name: 'Mikel Oyarzabal', country: 'Spain', countryCode: 'ESP', position: 'FW' },
+  { name: 'Bruno Fernandes', country: 'Portugal', countryCode: 'POR', position: 'MF' },
+  { name: 'Bernardo Silva', country: 'Portugal', countryCode: 'POR', position: 'MF' },
+  { name: 'Joao Felix', country: 'Portugal', countryCode: 'POR', position: 'FW' },
+  { name: 'Gianluca Scamacca', country: 'Italy', countryCode: 'ITA', position: 'FW' },
+  { name: 'Patrik Schick', country: 'Czechia', countryCode: 'CZE', position: 'FW' },
+  { name: 'Robert Lewandowski', country: 'Poland', countryCode: 'POL', position: 'FW' },
+  { name: 'Zlatan Ibrahimovic', country: 'Sweden', countryCode: 'SWE', position: 'FW' },
+  { name: 'Dejan Kulusevski', country: 'Sweden', countryCode: 'SWE', position: 'FW' },
+  { name: 'Alphonso Davies', country: 'Canada', countryCode: 'CAN', position: 'DF' },
+  { name: 'Jonathan David', country: 'Canada', countryCode: 'CAN', position: 'FW' },
+  { name: 'Edinson Cavani', country: 'Uruguay', countryCode: 'URU', position: 'FW' },
+  { name: 'Luis Suarez', country: 'Uruguay', countryCode: 'URU', position: 'FW' },
+  { name: 'Enner Valencia', country: 'Ecuador', countryCode: 'ECU', position: 'FW' },
+  { name: 'Khvicha Kvaratskhelia', country: 'Georgia', countryCode: 'GEO', position: 'FW' },
+  { name: 'Dusan Vlahovic', country: 'Serbia', countryCode: 'SRB', position: 'FW' },
+  { name: 'Aleksandar Mitrovic', country: 'Serbia', countryCode: 'SRB', position: 'FW' },
+  { name: 'Granit Xhaka', country: 'Switzerland', countryCode: 'SUI', position: 'MF' },
+  { name: 'Breel Embolo', country: 'Switzerland', countryCode: 'SUI', position: 'FW' },
+  { name: 'Dominik Szoboszlai', country: 'Hungary', countryCode: 'HUN', position: 'MF' },
+  { name: 'Rafael Leao', country: 'Portugal', countryCode: 'POR', position: 'FW' },
+  { name: 'Kingsley Coman', country: 'France', countryCode: 'FRA', position: 'FW' },
+  { name: 'Ollie Watkins', country: 'England', countryCode: 'ENG', position: 'FW' },
+  { name: 'Declan Rice', country: 'England', countryCode: 'ENG', position: 'MF' },
+  { name: 'Marcus Rashford', country: 'England', countryCode: 'ENG', position: 'FW' },
+  { name: 'Jack Grealish', country: 'England', countryCode: 'ENG', position: 'FW' },
+  { name: 'Eberechi Eze', country: 'England', countryCode: 'ENG', position: 'MF' },
+  { name: 'Morgan Rogers', country: 'England', countryCode: 'ENG', position: 'MF' },
+];
+
 // Scoring configuration
 export interface ScoringConfig {
   groupFirst: number;
@@ -159,11 +271,49 @@ export interface Manager {
   name: string;
   teamName: string;
   realName: string;
+  code: string; // 6-digit entry code
+  pincode: string; // 4-digit pincode to access team
   teamCodes: string[];
   submittedAt: string | null;
   topScorerGuess: TopScorerGuess | null;
   paid: boolean;
+  active: boolean; // confirmed interest in playing
   warnings: number;
+}
+
+// Degen Den - Side wager between two managers
+// Wager size measured in beer mugs (0.5 to 5). No money, no escrow.
+// Status flow: pending_acceptance (24h expiry) → live → resolved/cancelled/rejected
+export interface Wager {
+  id: string;
+  proposerId: string;
+  proposerName: string;
+  acceptorId: string;
+  acceptorName: string;
+  description: string;
+  stakeType: 'even' | 'custom';
+  proposerMugs: number; // 0.5 to 5
+  acceptorMugs: number; // 0.5 to 5
+  status: 'pending_acceptance' | 'live' | 'resolved' | 'cancelled' | 'rejected';
+  proposerConfirmed: boolean;
+  acceptorConfirmed: boolean;
+  proposedAt: string;
+  acceptedAt: string | null;
+  expiryDeadline: string | null; // 24h from creation, auto-hide if not accepted
+  winnerId: string | null;
+  resolvedAt: string | null;
+  rejectedReason: string | null;
+  commentsLocked: boolean;
+}
+
+// Comment on a wager — "WHAT THE STREETS ARE SAYING"
+export interface WagerComment {
+  id: string;
+  wagerId: string;
+  managerId: string;
+  managerName: string;
+  message: string;
+  postedAt: string;
 }
 
 export interface PayoutConfig {
@@ -175,7 +325,7 @@ export interface PayoutConfig {
 }
 
 export const DEFAULT_PAYOUT: PayoutConfig = {
-  buyIn: 250,
+  buyIn: 200,
   currency: 'HKD',
   firstPlacePercent: 50,
   secondPlacePercent: 30,
@@ -192,16 +342,18 @@ export interface AppSettings {
   tournamentStart: string;
   topScorerActual: TopScorerGuess | null;
   payout: PayoutConfig;
+  commentsLocked: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   draftLocked: false,
   submissionsOpen: true,
   draftMode: false,
-  hidePicksUntil: null,
+  hidePicksUntil: '2026-06-11T19:00:00.000Z', // June 12, 2026 3am HKT (default)
   scoring: DEFAULT_SCORING,
   tiers: { ...DEFAULT_TIERS },
   tournamentStart: '2026-06-11T15:00:00-04:00',
   topScorerActual: null,
   payout: DEFAULT_PAYOUT,
+  commentsLocked: false,
 };
