@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '@/context/GameContext';
-import { Trophy, Users, TrendingUp } from 'lucide-react';
+import { Trophy, Users, TrendingUp, Clock } from 'lucide-react';
 
 export default function StandingsPage() {
   const navigate = useNavigate();
@@ -28,14 +28,41 @@ export default function StandingsPage() {
     return '#8899AA';
   };
 
+  // Get last updated timestamp in HKT
+  const getLastUpdated = (): string => {
+    try {
+      const raw = localStorage.getItem('wc2026_derived_at') || localStorage.getItem('wc2026_fixtures_last_fetch');
+      if (!raw) return 'Not yet updated';
+      const date = new Date(raw);
+      // Format as HKT (UTC+8)
+      return date.toLocaleString('en-HK', {
+        timeZone: 'Asia/Hong_Kong',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }) + ' HKT';
+    } catch {
+      return 'Unknown';
+    }
+  };
+
   return (
     <div className="min-h-screen px-4 py-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <h1 className="font-pixel text-lg md:text-2xl mb-1" style={{ color: '#FFD700' }}>LIVE STANDINGS</h1>
-        <p className="font-pixel text-[8px] mb-5" style={{ color: '#8899AA' }}>
+        <p className="font-pixel text-[8px] mb-2" style={{ color: '#8899AA' }}>
           MANAGERS RANKED BY TOTAL POINTS
         </p>
+        <div className="flex items-center gap-1 mb-5">
+          <Clock className="w-3 h-3" style={{ color: '#00c8ff' }} />
+          <span className="font-pixel text-[7px]" style={{ color: '#00c8ff' }}>
+            LAST UPDATED: {getLastUpdated()}
+          </span>
+        </div>
 
         {/* Stats Bar */}
         <div className="grid grid-cols-3 gap-3 mb-6">

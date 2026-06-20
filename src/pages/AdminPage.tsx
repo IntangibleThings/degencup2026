@@ -239,6 +239,8 @@ export default function AdminPage() {
     dispatch({ type: 'SET_RESULTS', payload: derivedResults });
     // Explicitly persist to localStorage + Firebase (belt and suspenders)
     await saveResults(derivedResults);
+    // Save timestamp for Standings page display
+    localStorage.setItem('wc2026_derived_at', new Date().toISOString());
     console.log('[ADMIN] Results saved explicitly:', Object.keys(derivedResults).length, 'teams');
     setSyncStatus({ message: `APPLIED & SAVED RESULTS FOR ${derivedPreview?.teamsUpdated || 0} TEAMS`, type: 'success' });
     setShowResultsPreview(false);
