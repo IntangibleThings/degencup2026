@@ -4,6 +4,9 @@ import { getAllTeams, TEAM_FLAGS, TEAM_NAMES, KNOWN_PLAYERS, DEFAULT_SETTINGS } 
 import type { Tier, Wager } from '@/data/tournament';
 import { syncResults, loadApiConfig, saveApiConfig } from '@/data/apiSync';
 import { getStoredKey, storeKey, scrapeScores, parseRawScores, mergeScrapedResults, mapTeamName } from '@/data/firecrawl';
+import { getStoredToken as getFDToken, storeToken as storeFDToken, fetchWorldCupMatches } from '@/data/footballdata';
+import { generateResultsPreview } from '@/data/resultsEngine';
+import type { TournamentResults } from '@/data/tournament';
 import type { ApiConfig } from '@/data/apiSync';
 import type { ScrapedMatch } from '@/data/firecrawl';
 import { Lock, Unlock, Trash2, Users, Settings, Trophy, AlertTriangle, UserX, MessageSquareWarning, RefreshCw, Wifi, WifiOff, Clock, Key, Check, X, Beer, Globe } from 'lucide-react';
@@ -140,6 +143,18 @@ export default function AdminPage() {
   const [pasteText, setPasteText] = useState('');
   const [pastePreview, setPastePreview] = useState<ScrapedMatch[] | null>(null);
   const [isScraping, setIsScraping] = useState(false);
+  const [fdToken, setFdToken] = useState(getFDToken() || '');
+  const [fdResult, setFdResult] = useState<{ matches: number; errors: string[] } | null>(null);
+  const [isFdFetching, setIsFdFetching] = useState(false);
+
+  // Results engine preview state
+  const [derivedResults, setDerivedResults] = useState<TournamentResults | null>(null);
+  const [derivedPreview, setDerivedPreview] = useState<{
+    groupSummaries: { group: string; standings: { team: string; flag: string; pts: number; gd: number; pos: number }[] }[];
+    knockoutSummary: { round: string; matches: string[] };
+    teamsUpdated: number;
+  } | null>(null);
+  const [showResultsPreview, setShowResultsPreview] = useState(false);
 
   // Results form state
   const [resultForm, setResultForm] = useState<Record<string, {
@@ -271,6 +286,51 @@ export default function AdminPage() {
     setIsScraping(false);
   };
 
+  const handleFetchFootballData = async () => {
+    setIsFdFetching(true);
+    setFdResult(null);
+    setDerivedResults(null);
+    setDerivedPreview(null);
+    setShowResultsPreview(false);
+
+    const { matches, errors } = await fetchWorldCupMatches(fdToken || undefined);
+
+    if (matches.length > 0) {
+      localStorage.setItem('wc2026_fixtures', JSON.stringify(matches));
+      localStorage.setItem('wc2026_data_source', 'footballdata');
+      localStorage.setItem('wc2026_fixtures_last_fetch', Date.now().toString());
+
+      // Auto-derive results from the fetched matches
+      const preview = generateResultsPreview(matches);
+      setDerivedResults(preview.results);
+      setDerivedPreview({
+        groupSummaries: preview.groupSummaries,
+        knockoutSummary: preview.knockoutSummary,
+        teamsUpdated: preview.teamsUpdated,
+      });
+      setShowResultsPreview(true);
+    }
+
+    setFdResult({ matches: matches.length, errors });
+    setIsFdFetching(false);
+  };
+
+  const handleApplyDerivedResults = () => {
+    if (!derivedResults) return;
+    dispatch({ type: 'SET_RESULTS', payload: derivedResults });
+    setSyncStatus({ message: `APPLIED RESULTS FOR ${derivedPreview?.teamsUpdated || 0} TEAMS`, type: 'success' });
+    setShowResultsPreview(false);
+    setDerivedResults(null);
+    setDerivedPreview(null);
+    setTimeout(() => setSyncStatus(null), 4000);
+  };
+
+  const handleDiscardDerivedResults = () => {
+    setShowResultsPreview(false);
+    setDerivedResults(null);
+    setDerivedPreview(null);
+  };
+
   const handleParsePastedScores = () => {
     const parsed = parseRawScores(pasteText);
     setPastePreview(parsed);
@@ -285,6 +345,20 @@ export default function AdminPage() {
       localStorage.setItem('wc2026_fixtures', JSON.stringify(merged));
       localStorage.setItem('wc2026_data_source', 'firecrawl');
       localStorage.setItem('wc2026_fixtures_last_fetch', Date.now().toString());
+
+      // Auto-derive results from merged matches
+      try {
+        const allMatches = JSON.parse(localStorage.getItem('wc2026_fixtures') || '[]');
+        const preview = generateResultsPreview(allMatches);
+        setDerivedResults(preview.results);
+        setDerivedPreview({
+          groupSummaries: preview.groupSummaries,
+          knockoutSummary: preview.knockoutSummary,
+          teamsUpdated: preview.teamsUpdated,
+        });
+        setShowResultsPreview(true);
+      } catch { /* ignore auto-derive errors */ }
+
       setPastePreview(null);
       setPasteText('');
       setSyncStatus({ message: `APPLIED ${pastePreview.length} SCORES`, type: 'success' });
@@ -804,10 +878,194 @@ export default function AdminPage() {
               )}
             </div>
 
+            {/* football-data.org — PRIMARY method */}
+            <div className="retro-card p-4" style={{ borderColor: '#00AA00' }}>
+              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#00AA00' }}>
+                <Globe className="w-3 h-3" /> football-data.org (RECOMMENDED)
+              </h3>
+              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
+                <strong style={{ color: '#E8E8E8' }}>FREE tier includes World Cup 2026.</strong> Register at{' '}
+                <a href="https://www.football-data.org/client/register" target="_blank" rel="noreferrer" style={{ color: '#00AA00' }}>football-data.org/client/register</a>,
+                {' '}confirm email, copy your API token. This is the most reliable method.
+              </p>
+              <div className="flex gap-2 mb-3">
+                <input type="password" value={fdToken}
+                  onChange={e => { setFdToken(e.target.value); storeFDToken(e.target.value); }}
+                  placeholder="YOUR football-data.org API TOKEN"
+                  className="pixel-input flex-1 text-[10px] py-2 px-3" />
+                <button onClick={handleFetchFootballData} disabled={isFdFetching || !fdToken}
+                  className="pixel-btn green small">
+                  <RefreshCw className={`w-3 h-3 ${isFdFetching ? 'animate-spin' : ''}`} />
+                  {isFdFetching ? '...' : 'FETCH'}
+                </button>
+              </div>
+              {fdResult && (
+                <div className="mt-2">
+                  {fdResult.errors.length > 0 && fdResult.errors.map((err, i) => (
+                    <p key={i} className="font-pixel text-[7px] p-2 mb-1" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
+                      {err}
+                    </p>
+                  ))}
+                  {fdResult.matches > 0 && (
+                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(0,170,0,0.15)', color: '#00AA00', border: '1px solid #00AA00' }}>
+                      LOADED {fdResult.matches} MATCHES FROM football-data.org
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Derived Results Preview */}
+            {showResultsPreview && derivedPreview && (
+              <div className="retro-card p-4" style={{ borderColor: '#00c8ff', backgroundColor: 'rgba(0,200,255,0.05)' }}>
+                <h3 className="font-pixel text-[10px] mb-3 flex items-center gap-2" style={{ color: '#00c8ff' }}>
+                  <Trophy className="w-3 h-3" /> DERIVED RESULTS PREVIEW
+                </h3>
+
+                <p className="font-pixel text-[8px] mb-3" style={{ color: '#E8E8E8' }}>
+                  The results engine analyzed {fdResult?.matches || 0} matches and derived standings for {derivedPreview.teamsUpdated} teams.
+                  Review below before applying to the scoring system.
+                </p>
+
+                {/* Group Standings */}
+                {derivedPreview.groupSummaries.length > 0 && (
+                  <div className="mb-3">
+                    <p className="font-pixel text-[7px] mb-2" style={{ color: '#FFD700' }}>GROUP STANDINGS</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                      {derivedPreview.groupSummaries.map(g => (
+                        <div key={g.group} className="p-2" style={{ backgroundColor: 'rgba(12,18,30,0.6)', border: '1px solid #0F3460' }}>
+                          <p className="font-pixel text-[6px] mb-1" style={{ color: '#8899AA' }}>{g.group}</p>
+                          {g.standings.map(s => (
+                            <div key={s.team} className="flex items-center justify-between py-0.5">
+                              <span className="font-pixel text-[7px]" style={{ color: s.pos <= 2 ? '#00ff88' : s.pos === 3 ? '#FFD700' : '#E60012' }}>
+                                {s.pos}. {s.flag} {s.team}
+                              </span>
+                              <span className="font-pixel text-[6px]" style={{ color: '#8899AA' }}>
+                                {s.pts}pts {s.gd > 0 ? '+' : ''}{s.gd}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Knockout Summary */}
+                {derivedPreview.knockoutSummary.matches.length > 0 && (
+                  <div className="mb-3">
+                    <p className="font-pixel text-[7px] mb-2" style={{ color: '#FFD700' }}>
+                      LATEST KNOCKOUT: {derivedPreview.knockoutSummary.round}
+                    </p>
+                    <div className="space-y-1">
+                      {derivedPreview.knockoutSummary.matches.map((m, i) => (
+                        <p key={i} className="font-pixel text-[7px]" style={{ color: '#E8E8E8' }}>{m}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fantasy Scoring Impact */}
+                {derivedResults && (
+                  <div className="mb-3 p-2" style={{ backgroundColor: 'rgba(255,215,0,0.05)', border: '1px solid #FFD700' }}>
+                    <p className="font-pixel text-[7px] mb-1" style={{ color: '#FFD700' }}>FANTASY IMPACT</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+                      {[
+                        { label: 'ADVANCED TO KNOCKOUT', count: Object.values(derivedResults).filter(r => r.reachedKnockout).length, color: '#00ff88' },
+                        { label: 'REACHED R16', count: Object.values(derivedResults).filter(r => r.reachedRoundOf16).length, color: '#2D3192' },
+                        { label: 'REACHED QF', count: Object.values(derivedResults).filter(r => r.reachedQuarterFinal).length, color: '#2D3192' },
+                        { label: 'REACHED SF', count: Object.values(derivedResults).filter(r => r.reachedSemiFinal).length, color: '#2D3192' },
+                        { label: 'IN FINAL', count: Object.values(derivedResults).filter(r => r.reachedFinal).length, color: '#FFD700' },
+                        { label: 'WORLD CHAMP', count: Object.values(derivedResults).filter(r => r.wonWorldCup).length, color: '#FFD700' },
+                        { label: '3RD PLACE', count: Object.values(derivedResults).filter(r => r.wonThirdPlace).length, color: '#e76f51' },
+                        { label: 'ELIMINATED', count: Object.values(derivedResults).filter(r => r.eliminated).length, color: '#E60012' },
+                      ].map(item => (
+                        <div key={item.label} className="text-center p-1">
+                          <div className="font-pixel text-lg" style={{ color: item.color }}>{item.count}</div>
+                          <div className="font-pixel text-[5px]" style={{ color: '#8899AA' }}>{item.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  <button onClick={handleApplyDerivedResults}
+                    className="pixel-btn green flex-1 flex items-center justify-center gap-2">
+                    <Check className="w-3 h-3" /> APPLY TO SCORING SYSTEM
+                  </button>
+                  <button onClick={handleDiscardDerivedResults}
+                    className="pixel-btn red small">
+                    <X className="w-3 h-3" /> DISCARD
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Paste Scores — FALLBACK */}
+            <div className="retro-card p-4" style={{ borderColor: '#FFD700' }}>
+              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#FFD700' }}>
+                <Globe className="w-3 h-3" /> PASTE SCORES (FALLBACK)
+              </h3>
+              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
+                Copy scores from ESPN, Wikipedia, or any source. Paste the raw text below. 
+                Works with: "France 3-1 Senegal", "Group A: Mexico 2-0 South Africa", etc.
+              </p>
+              <textarea
+                value={pasteText}
+                onChange={e => { setPasteText(e.target.value); setPastePreview(null); }}
+                placeholder={`Paste scores here:
+Group A: Mexico 2-0 South Africa
+Group B: USA 4-1 Paraguay
+France 3-1 Senegal
+Argentina 3-0 Algeria`}
+                className="pixel-input w-full text-[10px] resize-none"
+                rows={6}
+              />
+              <div className="flex gap-2 mt-2">
+                <button onClick={handleParsePastedScores} disabled={!pasteText.trim()}
+                  className="pixel-btn gold small">
+                  PARSE
+                </button>
+                {pastePreview && pastePreview.length > 0 && (
+                  <button onClick={handleApplyPastedScores}
+                    className="pixel-btn green small">
+                    APPLY {pastePreview.length} SCORES
+                  </button>
+                )}
+              </div>
+              {pastePreview && (
+                <div className="mt-2">
+                  {pastePreview.length === 0 ? (
+                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
+                      No scores found. Try: "France 3-1 Senegal" or "Group A: Mexico 2-0 South Africa"
+                    </p>
+                  ) : (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      <p className="font-pixel text-[7px] mb-1" style={{ color: '#00AA00' }}>
+                        FOUND {pastePreview.length} SCORES — CLICK APPLY TO SAVE
+                      </p>
+                      {pastePreview.map((m, i) => (
+                        <div key={i} className="flex items-center justify-between px-2 py-1" style={{ background: 'rgba(0,170,0,0.05)' }}>
+                          <span className="font-pixel text-[7px]" style={{ color: '#e8d5f5' }}>
+                            {m.homeTeam} {m.homeGoals}-{m.awayGoals} {m.awayTeam}
+                          </span>
+                          <span className="font-pixel text-[6px]" style={{ color: mapTeamName(m.homeTeam) && mapTeamName(m.awayTeam) ? '#00AA00' : '#E60012' }}>
+                            {mapTeamName(m.homeTeam) && mapTeamName(m.awayTeam) ? 'OK' : 'UNMAPPED'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Firecrawl Score Scraping */}
             <div className="retro-card p-4" style={{ borderColor: '#FF6B35' }}>
               <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#FF6B35' }}>
-                <Globe className="w-3 h-3" /> FIRECRAWL SCORE SCRAPER
+                <Globe className="w-3 h-3" /> FIRECRAWL (EXPERIMENTAL)
               </h3>
               <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
                 Scrape live scores from ESPN/Flashscore after games end. Free tier: 500 credits/month at <a href="https://firecrawl.dev" target="_blank" rel="noreferrer" style={{ color: '#FF6B35' }}>firecrawl.dev</a>. Each scrape = 1 credit.
@@ -870,74 +1128,15 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* Manual Paste Scores — fallback when scraping fails */}
-            <div className="retro-card p-4" style={{ borderColor: '#00AA00' }}>
-              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#00AA00' }}>
-                <Globe className="w-3 h-3" /> PASTE SCORES (FALLBACK)
-              </h3>
-              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
-                If scraping does not work, paste raw score text here from ESPN, Wikipedia, or any source. 
-                Format: "France 3-1 Senegal" or "Group A: Mexico 2-0 South Africa"
-              </p>
-              <textarea
-                value={pasteText}
-                onChange={e => { setPasteText(e.target.value); setPastePreview(null); }}
-                placeholder={`Paste scores here, e.g.:
-Group A: Mexico 2-0 South Africa
-Group B: USA 4-1 Paraguay
-Group C: Brazil 1-1 Morocco
-France 3-1 Senegal
-Argentina 3-0 Algeria`}
-                className="pixel-input w-full text-[10px] resize-none"
-                rows={6}
-              />
-              <div className="flex gap-2 mt-2">
-                <button onClick={handleParsePastedScores} disabled={!pasteText.trim()}
-                  className="pixel-btn green small">
-                  <RefreshCw className="w-3 h-3" /> PARSE
-                </button>
-                {pastePreview && pastePreview.length > 0 && (
-                  <button onClick={handleApplyPastedScores}
-                    className="pixel-btn gold small">
-                    APPLY {pastePreview.length} SCORES
-                  </button>
-                )}
-              </div>
-              {/* Parsed preview */}
-              {pastePreview && (
-                <div className="mt-2">
-                  {pastePreview.length === 0 ? (
-                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
-                      No scores found in pasted text. Try the format: "France 3-1 Senegal"
-                    </p>
-                  ) : (
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      <p className="font-pixel text-[7px] mb-1" style={{ color: '#00AA00' }}>
-                        FOUND {pastePreview.length} SCORES (click APPLY to save)
-                      </p>
-                      {pastePreview.map((m, i) => (
-                        <div key={i} className="flex items-center justify-between px-2 py-1" style={{ background: 'rgba(0,170,0,0.05)' }}>
-                          <span className="font-pixel text-[7px]" style={{ color: '#e8d5f5' }}>
-                            {m.homeTeam} {m.homeGoals}-{m.awayGoals} {m.awayTeam}
-                          </span>
-                          <span className="font-pixel text-[6px]" style={{ color: mapTeamName(m.homeTeam) ? '#00AA00' : '#E60012' }}>
-                            {mapTeamName(m.homeTeam) && mapTeamName(m.awayTeam) ? 'MAPPED' : 'UNMAPPED'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* Info */}
             <div className="p-3" style={{ backgroundColor: 'rgba(45,49,146,0.1)', borderLeft: '4px solid #2D3192' }}>
               <p className="text-[10px]" style={{ color: '#8899AA' }}>
-                <strong style={{ color: '#E8E8E8' }}>How it works:</strong> The auto-sync feature connects to a live sports API 
-                (API-Football) to fetch finished World Cup 2026 matches. It then automatically updates each team's tournament 
-                progress and recalculates all manager scores. Enable auto-sync and set your preferred interval — the system 
-                will check for new results automatically. Firecrawl is a free fallback that scrapes public score pages.
+                <strong style={{ color: '#E8E8E8' }}>How results connect to scoring:</strong> When you FETCH from football-data.org
+                or APPLY pasted scores, the <strong style={{ color: '#00c8ff' }}>Results Engine</strong> automatically calculates
+                group standings (points, goal difference) and tracks knockout progress (R32 → R16 → QF → SF → Final → Winner).
+                A preview appears showing exactly what was derived. Click <strong style={{ color: '#00AA00' }}>APPLY TO SCORING SYSTEM</strong>
+                to update all manager scores. The engine knows your scoring rules and maps each team's achievement to the correct
+                point values (group position + knockout rounds + top scorer bonus).
               </p>
             </div>
           </div>
