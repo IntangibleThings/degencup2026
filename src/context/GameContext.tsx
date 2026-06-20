@@ -347,7 +347,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     loadSettingsAndResults()
       .then((data) => {
         if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-        if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+        // Only load cloud results if they have actual data (not empty {})
+        if (data?.results && Object.keys(data.results).length > 0) {
+          dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+        }
       })
       .catch(() => {});
 
@@ -377,7 +380,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     const unsubSettings = subscribeToSettingsAndResults((data) => {
       if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-      if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+      // Only overwrite results if cloud has actual data — preserves locally derived results
+      if (data?.results && Object.keys(data.results).length > 0) {
+        dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+      }
     });
 
     const unsubWagers = subscribeToWagers((cloudWagers) => {

@@ -2,15 +2,13 @@ import { useState, useEffect } from 'react';
 import { useGame } from '@/context/GameContext';
 import { getAllTeams, TEAM_FLAGS, TEAM_NAMES, KNOWN_PLAYERS, DEFAULT_SETTINGS } from '@/data/tournament';
 import type { Tier, Wager } from '@/data/tournament';
-import { syncResults, loadApiConfig, saveApiConfig } from '@/data/apiSync';
-import { getStoredKey, storeKey, scrapeScores, parseRawScores, mergeScrapedResults, mapTeamName, mapTeamName as mapTeamCode } from '@/data/firecrawl';
+import { parseRawScores, mergeScrapedResults, mapTeamName, mapTeamName as mapTeamCode } from '@/data/firecrawl';
 import { getStoredToken as getFDToken, storeToken as storeFDToken, fetchWorldCupMatches } from '@/data/footballdata';
 import { generateResultsPreview } from '@/data/resultsEngine';
 import type { TournamentResults } from '@/data/tournament';
 import type { Match } from '@/data/fixtures';
-import type { ApiConfig } from '@/data/apiSync';
 import type { ScrapedMatch } from '@/data/firecrawl';
-import { Lock, Unlock, Trash2, Users, Settings, Trophy, AlertTriangle, UserX, MessageSquareWarning, RefreshCw, Wifi, WifiOff, Clock, Key, Check, X, Beer, Globe } from 'lucide-react';
+import { Lock, Unlock, Trash2, Users, Settings, Trophy, AlertTriangle, UserX, MessageSquareWarning, RefreshCw, Wifi, WifiOff, Key, Check, X, Beer, Globe } from 'lucide-react';
 
 const ADMIN_PASSWORD = 'Dansucks123!';
 const ADMIN_AUTH_KEY = 'vibecup_admin_auth';
@@ -130,20 +128,14 @@ export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState(false);
   const [cloudMsg, setCloudMsg] = useState('');
   const [activeTab, setActiveTab] = useState<'managers' | 'tiers' | 'results' | 'sync' | 'settings' | 'degen-den'>('managers');
-  const [apiConfig, setApiConfig] = useState<ApiConfig>(loadApiConfig);
   const [syncStatus, setSyncStatus] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [newManagerName, setNewManagerName] = useState('');
   const [message, setMessage] = useState('');
-  const [apiStatus, setApiStatus] = useState('');
   const [editingWager, setEditingWager] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ description: '', proposerMugs: 1, acceptorMugs: 1 });
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
-  const [firecrawlKey, setFirecrawlKey] = useState(getStoredKey() || '');
-  const [scrapeResult, setScrapeResult] = useState<{ matches: ScrapedMatch[]; errors: string[]; source?: string } | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [pastePreview, setPastePreview] = useState<ScrapedMatch[] | null>(null);
-  const [isScraping, setIsScraping] = useState(false);
   const [fdToken, setFdToken] = useState(getFDToken() || '');
   const [fdResult, setFdResult] = useState<{ matches: number; errors: string[]; method?: string } | null>(null);
   const [isFdFetching, setIsFdFetching] = useState(false);
@@ -163,20 +155,6 @@ export default function AdminPage() {
     reachedQuarterFinal: boolean; reachedSemiFinal: boolean; reachedFinal: boolean;
     wonWorldCup: boolean; wonThirdPlace: boolean; eliminated: boolean;
   }>>({});
-
-  const handleSyncFromApi = async () => {
-    setApiStatus('SYNCING...');
-    const config = loadApiConfig();
-    const result = await syncResults(config);
-    if (result.errors.length > 0 && result.updated === 0) {
-      setApiStatus('SYNC FAILED: ' + result.errors[0]);
-    } else if (result.updated > 0) {
-      setApiStatus('SYNCED ' + result.updated + ' TEAMS');
-    } else {
-      setApiStatus('NO FINISHED MATCHES YET');
-    }
-    setTimeout(() => setApiStatus(''), 4000);
-  };
 
   const handleLogin = () => {
     if (password === ADMIN_PASSWORD) {
@@ -225,66 +203,6 @@ export default function AdminPage() {
     warnManager(id);
     setMessage('WARNING ISSUED');
     setTimeout(() => setMessage(''), 1500);
-  };
-
-  const handleScrapeScores = async () => {
-    setIsScraping(true);
-    setScrapeResult(null);
-    try {
-      const result = await scrapeScores(firecrawlKey || undefined);
-      // If everything succeeded but no matches found, add a helpful message
-      if (result.matches.length === 0 && result.errors.length === 0) {
-        result.errors.push('No scores found on any source. The World Cup 2026 page may use JavaScript to load scores dynamically. Try again after more matches have finished.');
-      }
-      setScrapeResult(result);
-    } catch (err) {
-      setScrapeResult({
-        matches: [],
-        source: '',
-        errors: [`Unexpected error: ${err instanceof Error ? err.message : 'unknown'}`],
-      });
-    }
-    setIsScraping(false);
-  };
-
-  const handleTestKey = async () => {
-    setIsScraping(true);
-    setScrapeResult(null);
-    try {
-      const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${firecrawlKey}`,
-        },
-        body: JSON.stringify({
-          url: 'https://example.com',
-          formats: ['markdown'],
-          onlyMainContent: true,
-        }),
-      });
-      const data = await resp.json();
-      if (data.success || data.error?.includes('Invalid token')) {
-        setScrapeResult({
-          matches: [],
-          source: '',
-          errors: [`Key is valid! (${resp.status === 401 ? 'Auth confirmed' : 'API working'}) Ready to scrape.`],
-        });
-      } else {
-        setScrapeResult({
-          matches: [],
-          source: '',
-          errors: [`Key test failed: ${data.error || 'unknown error'}`],
-        });
-      }
-    } catch (err) {
-      setScrapeResult({
-        matches: [],
-        source: '',
-        errors: [`Network error — check your connection: ${err instanceof Error ? err.message : 'unknown'}`],
-      });
-    }
-    setIsScraping(false);
   };
 
   const handleFetchFootballData = async () => {
@@ -336,12 +254,14 @@ export default function AdminPage() {
     if (!pastePreview || pastePreview.length === 0) return;
 
     // Convert ScrapedMatch[] (full names) → Match[] (3-letter codes) for the results engine
-    const convertedMatches: Match[] = [];
+    // Deduplicate: keep only the LAST occurrence of each home+away pair (so re-pasting updates, not adds)
+    const matchMap = new Map<string, Match>();
     for (const s of pastePreview) {
       const homeCode = mapTeamCode(s.homeTeam);
       const awayCode = mapTeamCode(s.awayTeam);
       if (homeCode && awayCode) {
-        convertedMatches.push({
+        const key = `${homeCode}|${awayCode}`;
+        matchMap.set(key, {
           id: Date.now() + Math.random(),
           date: new Date().toISOString(),
           homeTeam: homeCode,
@@ -354,6 +274,7 @@ export default function AdminPage() {
         });
       }
     }
+    const convertedMatches = Array.from(matchMap.values());
 
     // Also merge into fixture cache for Training Ground display
     const cached = localStorage.getItem('wc2026_fixtures');
@@ -425,40 +346,6 @@ export default function AdminPage() {
   const triggerSaveFlash = (wagerId: string) => {
     setSavedFlash(wagerId);
     setTimeout(() => setSavedFlash(null), 2000);
-  };
-
-  const handleSyncNow = async () => {
-    setIsSyncing(true);
-    setSyncStatus({ message: 'SYNCING...', type: 'info' });
-
-    const { results, updated, errors } = await syncResults(apiConfig);
-
-    if (errors.length > 0 && updated === 0) {
-      setSyncStatus({ message: errors[0], type: 'error' });
-    } else {
-      // Apply the synced results
-      Object.entries(results).forEach(([teamCode, result]) => {
-        dispatch({ type: 'UPDATE_RESULT', payload: { teamCode, result } });
-      });
-
-      const newConfig = { ...apiConfig, lastSync: new Date().toISOString() };
-      setApiConfig(newConfig);
-      saveApiConfig(newConfig);
-
-      if (errors.length > 0) {
-        setSyncStatus({ message: `UPDATED ${updated} TEAMS. NOTE: ${errors[0]}`, type: 'info' });
-      } else {
-        setSyncStatus({ message: `SUCCESS! UPDATED ${updated} TEAMS.`, type: 'success' });
-      }
-    }
-
-    setIsSyncing(false);
-  };
-
-  const handleUpdateApiConfig = (updates: Partial<ApiConfig>) => {
-    const newConfig = { ...apiConfig, ...updates };
-    setApiConfig(newConfig);
-    saveApiConfig(newConfig);
   };
 
   const handleUpdateResult = (code: string) => {
@@ -793,119 +680,15 @@ export default function AdminPage() {
         {/* Sync Tab */}
         {activeTab === 'sync' && (
           <div className="space-y-4">
-            {/* Sync Status */}
-            <div className="retro-card p-4 flex items-center justify-between" style={{ borderColor: apiConfig.autoSync ? '#00AA00' : '#8899AA' }}>
-              <div className="flex items-center gap-2">
-                {apiConfig.autoSync ? <Wifi className="w-4 h-4" style={{ color: '#00AA00' }} /> : <WifiOff className="w-4 h-4" style={{ color: '#8899AA' }} />}
-                <span className="font-pixel text-[10px]" style={{ color: apiConfig.autoSync ? '#00AA00' : '#8899AA' }}>
-                  AUTO-SYNC IS {apiConfig.autoSync ? 'ON' : 'OFF'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {apiConfig.lastSync && (
-                  <span className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>
-                    LAST SYNC: {new Date(apiConfig.lastSync).toLocaleString()}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Provider Selection */}
-            <div className="retro-card p-4">
-              <h3 className="font-pixel text-[10px] mb-2" style={{ color: '#FFD700' }}>DATA PROVIDER</h3>
-              <div className="flex gap-2 mb-3">
-                <button onClick={() => handleUpdateApiConfig({ provider: 'manual' })}
-                  className="font-pixel text-[8px] px-3 py-2"
-                  style={{ backgroundColor: apiConfig.provider === 'manual' ? '#2D3192' : '#1A1A2E', color: apiConfig.provider === 'manual' ? '#FFD700' : '#8899AA', border: '2px solid ' + (apiConfig.provider === 'manual' ? '#FFD700' : '#0F3460') }}>
-                  MANUAL
-                </button>
-                <button onClick={() => handleUpdateApiConfig({ provider: 'api-football' })}
-                  className="font-pixel text-[8px] px-3 py-2"
-                  style={{ backgroundColor: apiConfig.provider === 'api-football' ? '#2D3192' : '#1A1A2E', color: apiConfig.provider === 'api-football' ? '#FFD700' : '#8899AA', border: '2px solid ' + (apiConfig.provider === 'api-football' ? '#FFD700' : '#0F3460') }}>
-                  API-FOOTBALL
-                </button>
-              </div>
-
-              {apiConfig.provider === 'api-football' && (
-                <div className="space-y-2">
-                  <label className="font-pixel text-[7px] block" style={{ color: '#8899AA' }}>API KEY (from api-football.com)</label>
-                  <input type="password" value={apiConfig.apiKey}
-                    onChange={e => handleUpdateApiConfig({ apiKey: e.target.value })}
-                    placeholder="YOUR API-FOOTBALL KEY" className="pixel-input w-full text-[10px] py-2 px-3" />
-                  <p className="text-[10px]" style={{ color: '#8899AA' }}>
-                    Get a free API key at <a href="https://www.api-football.com/" target="_blank" rel="noreferrer" style={{ color: '#2D3192' }}>api-football.com</a>. 100 free calls/day.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Auto-Sync Settings */}
-            <div className="retro-card p-4">
-              <h3 className="font-pixel text-[10px] mb-2" style={{ color: '#FFD700' }}>
-                <Clock className="w-3 h-3 inline mr-1" /> AUTO-SYNC SCHEDULE
-              </h3>
-              <div className="flex items-center gap-4 mb-3">
-                <button onClick={() => handleUpdateApiConfig({ autoSync: !apiConfig.autoSync })}
-                  className={`pixel-btn ${apiConfig.autoSync ? 'green' : ''} small`}>
-                  {apiConfig.autoSync ? 'ENABLED' : 'DISABLED'}
-                </button>
-                {apiConfig.autoSync && (
-                  <span className="font-pixel text-[8px] animate-blink" style={{ color: '#00AA00' }}>
-                    &#9679; WILL AUTO-SYNC EVERY {apiConfig.syncIntervalHours} HOURS
-                  </span>
-                )}
-              </div>
-
-              {apiConfig.autoSync && (
-                <div className="flex gap-2">
-                  {[1, 6, 12, 24].map(hours => (
-                    <button key={hours} onClick={() => handleUpdateApiConfig({ syncIntervalHours: hours })}
-                      className="font-pixel text-[7px] px-2 py-1"
-                      style={{
-                        backgroundColor: apiConfig.syncIntervalHours === hours ? '#2D3192' : '#1A1A2E',
-                        color: apiConfig.syncIntervalHours === hours ? '#FFD700' : '#8899AA',
-                        border: '2px solid ' + (apiConfig.syncIntervalHours === hours ? '#FFD700' : '#0F3460'),
-                      }}>
-                      EVERY {hours}H
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Manual Sync */}
-            <div className="retro-card p-4" style={{ borderColor: '#FFD700' }}>
-              <h3 className="font-pixel text-[10px] mb-2" style={{ color: '#FFD700' }}>MANUAL SYNC</h3>
-              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
-                Click to fetch the latest match results and update all manager scores immediately.
-              </p>
-              <button onClick={handleSyncNow} disabled={isSyncing}
-                className="pixel-btn gold w-full flex items-center justify-center gap-2">
-                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                {isSyncing ? 'SYNCING...' : 'SYNC NOW'}
-              </button>
-
-              {syncStatus && (
-                <div className={`mt-3 p-2 font-pixel text-[8px]`}
-                  style={{
-                    backgroundColor: syncStatus.type === 'success' ? 'rgba(0,170,0,0.15)' : syncStatus.type === 'error' ? 'rgba(230,0,18,0.15)' : 'rgba(45,49,146,0.15)',
-                    borderLeft: '4px solid ' + (syncStatus.type === 'success' ? '#00AA00' : syncStatus.type === 'error' ? '#E60012' : '#2D3192'),
-                    color: syncStatus.type === 'success' ? '#00AA00' : syncStatus.type === 'error' ? '#E60012' : '#8899AA',
-                  }}>
-                  {syncStatus.message}
-                </div>
-              )}
-            </div>
-
             {/* football-data.org — PRIMARY method */}
             <div className="retro-card p-4" style={{ borderColor: '#00AA00' }}>
               <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#00AA00' }}>
-                <Globe className="w-3 h-3" /> football-data.org (RECOMMENDED)
+                <Globe className="w-3 h-3" /> football-data.org
               </h3>
               <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
                 <strong style={{ color: '#E8E8E8' }}>FREE tier includes World Cup 2026.</strong> Register at{' '}
                 <a href="https://www.football-data.org/client/register" target="_blank" rel="noreferrer" style={{ color: '#00AA00' }}>football-data.org/client/register</a>,
-                {' '}confirm email, copy your API token. This is the most reliable method.
+                {' '}copy your API token. FETCH works automatically after you deploy the proxy function once.
               </p>
               <div className="flex gap-2 mb-3">
                 <input type="password" value={fdToken}
@@ -928,20 +711,13 @@ export default function AdminPage() {
                         </p>
                       ))}
                       <div className="p-2 mt-2" style={{ backgroundColor: 'rgba(0,200,255,0.05)', border: '1px solid #00c8ff' }}>
-                        <p className="font-pixel text-[7px] mb-1" style={{ color: '#00c8ff' }}>TO FIX: DEPLOY THE PROXY FUNCTION</p>
-                        <p className="font-pixel text-[6px] mb-1" style={{ color: '#8899AA' }}>
-                          Your token is valid but football-data.org blocks browser requests from deployed sites.
-                          The proxy function is already written. Deploy it once and FETCH will work forever:
-                        </p>
+                        <p className="font-pixel text-[7px] mb-1" style={{ color: '#00c8ff' }}>TO ENABLE FETCH: DEPLOY THE PROXY</p>
                         <ol className="font-pixel text-[6px] space-y-0.5 ml-3" style={{ color: '#E8E8E8' }}>
                           <li>1. cd functions</li>
                           <li>2. npm install</li>
                           <li>3. firebase deploy --only functions</li>
-                          <li>4. Come back and click FETCH again</li>
+                          <li>4. Click FETCH again</li>
                         </ol>
-                        <p className="font-pixel text-[6px] mt-1" style={{ color: '#8899AA' }}>
-                          Or use Paste Scores below (works immediately, no setup).
-                        </p>
                       </div>
                     </div>
                   )}
@@ -960,13 +736,9 @@ export default function AdminPage() {
                 <h3 className="font-pixel text-[10px] mb-3 flex items-center gap-2" style={{ color: '#00c8ff' }}>
                   <Trophy className="w-3 h-3" /> DERIVED RESULTS PREVIEW
                 </h3>
-
                 <p className="font-pixel text-[8px] mb-3" style={{ color: '#E8E8E8' }}>
-                  The results engine analyzed {fdResult?.matches || 0} matches and derived standings for {derivedPreview.teamsUpdated} teams.
-                  Review below before applying to the scoring system.
+                  Results engine analyzed {fdResult?.matches || 0} matches. Review before applying.
                 </p>
-
-                {/* Group Standings */}
                 {derivedPreview.groupSummaries.length > 0 && (
                   <div className="mb-3">
                     <p className="font-pixel text-[7px] mb-2" style={{ color: '#FFD700' }}>GROUP STANDINGS</p>
@@ -989,22 +761,6 @@ export default function AdminPage() {
                     </div>
                   </div>
                 )}
-
-                {/* Knockout Summary */}
-                {derivedPreview.knockoutSummary.matches.length > 0 && (
-                  <div className="mb-3">
-                    <p className="font-pixel text-[7px] mb-2" style={{ color: '#FFD700' }}>
-                      LATEST KNOCKOUT: {derivedPreview.knockoutSummary.round}
-                    </p>
-                    <div className="space-y-1">
-                      {derivedPreview.knockoutSummary.matches.map((m, i) => (
-                        <p key={i} className="font-pixel text-[7px]" style={{ color: '#E8E8E8' }}>{m}</p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Fantasy Scoring Impact */}
                 {derivedResults && (
                   <div className="mb-3 p-2" style={{ backgroundColor: 'rgba(255,215,0,0.05)', border: '1px solid #FFD700' }}>
                     <p className="font-pixel text-[7px] mb-1" style={{ color: '#FFD700' }}>FANTASY IMPACT</p>
@@ -1027,8 +783,6 @@ export default function AdminPage() {
                     </div>
                   </div>
                 )}
-
-                {/* Action Buttons */}
                 <div className="flex gap-2">
                   <button onClick={handleApplyDerivedResults}
                     className="pixel-btn green flex-1 flex items-center justify-center gap-2">
@@ -1042,14 +796,13 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Paste Scores — FALLBACK */}
+            {/* Paste Scores */}
             <div className="retro-card p-4" style={{ borderColor: '#FFD700' }}>
               <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#FFD700' }}>
-                <Globe className="w-3 h-3" /> PASTE SCORES (FALLBACK)
+                <Globe className="w-3 h-3" /> PASTE SCORES
               </h3>
               <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
-                Copy scores from ESPN, Wikipedia, or any source. Paste the raw text below. 
-                Works with: "France 3-1 Senegal", "Group A: Mexico 2-0 South Africa", etc.
+                Copy scores from any source. Paste raw text. Works with: &quot;France 3-1 Senegal&quot;, &quot;Group A: Mexico 2-0 South Africa&quot;.
               </p>
               <textarea
                 value={pasteText}
@@ -1057,33 +810,28 @@ export default function AdminPage() {
                 placeholder={`Paste scores here:
 Group A: Mexico 2-0 South Africa
 Group B: USA 4-1 Paraguay
-France 3-1 Senegal
-Argentina 3-0 Algeria`}
+France 3-1 Senegal`}
                 className="pixel-input w-full text-[10px] resize-none"
                 rows={6}
               />
               <div className="flex gap-2 mt-2">
                 <button onClick={handleParsePastedScores} disabled={!pasteText.trim()}
-                  className="pixel-btn gold small">
-                  PARSE
-                </button>
+                  className="pixel-btn gold small">PARSE</button>
                 {pastePreview && pastePreview.length > 0 && (
                   <button onClick={handleApplyPastedScores}
-                    className="pixel-btn green small">
-                    APPLY {pastePreview.length} SCORES
-                  </button>
+                    className="pixel-btn green small">APPLY {pastePreview.length} SCORES</button>
                 )}
               </div>
               {pastePreview && (
                 <div className="mt-2">
                   {pastePreview.length === 0 ? (
                     <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
-                      No scores found. Try: "France 3-1 Senegal" or "Group A: Mexico 2-0 South Africa"
+                      No scores found. Try: &quot;France 3-1 Senegal&quot;
                     </p>
                   ) : (
                     <div className="space-y-1 max-h-32 overflow-y-auto">
                       <p className="font-pixel text-[7px] mb-1" style={{ color: '#00AA00' }}>
-                        FOUND {pastePreview.length} SCORES — CLICK APPLY TO SAVE
+                        FOUND {pastePreview.length} SCORES
                       </p>
                       {pastePreview.map((m, i) => (
                         <div key={i} className="flex items-center justify-between px-2 py-1" style={{ background: 'rgba(0,170,0,0.05)' }}>
@@ -1101,141 +849,13 @@ Argentina 3-0 Algeria`}
               )}
             </div>
 
-            {/* Firecrawl Score Scraping */}
-            <div className="retro-card p-4" style={{ borderColor: '#FF6B35' }}>
-              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#FF6B35' }}>
-                <Globe className="w-3 h-3" /> FIRECRAWL (EXPERIMENTAL)
-              </h3>
-              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
-                Scrape live scores from ESPN/Flashscore after games end. Free tier: 500 credits/month at <a href="https://firecrawl.dev" target="_blank" rel="noreferrer" style={{ color: '#FF6B35' }}>firecrawl.dev</a>. Each scrape = 1 credit.
-              </p>
-              <div className="flex gap-2 mb-3">
-                <input type="password" value={firecrawlKey}
-                  onChange={e => { setFirecrawlKey(e.target.value); storeKey(e.target.value); }}
-                  placeholder="fc_... YOUR FIRECRAWL KEY" className="pixel-input flex-1 text-[10px] py-2 px-3" />
-                <button onClick={handleTestKey} disabled={isScraping || !firecrawlKey}
-                  className="pixel-btn small" style={{ backgroundColor: '#2D3192', borderColor: '#2D3192', color: '#FFD700' }}>
-                  TEST
-                </button>
-                <button onClick={handleScrapeScores} disabled={isScraping || !firecrawlKey}
-                  className="pixel-btn small" style={{ backgroundColor: '#FF6B35', borderColor: '#FF6B35', color: '#fff' }}>
-                  <RefreshCw className={`w-3 h-3 ${isScraping ? 'animate-spin' : ''}`} />
-                  {isScraping ? '...' : 'SCRAPE'}
-                </button>
-              </div>
-              {/* Always show scrape status */}
-              {scrapeResult && (
-                <div className="mt-2">
-                  {/* Errors */}
-                  {scrapeResult.errors.length > 0 && (
-                    <div className="mb-2">
-                      {scrapeResult.errors.map((err, i) => (
-                        <p key={i} className="font-pixel text-[7px] p-2 mb-1"
-                          style={{
-                            background: err.includes('valid') || err.includes('Ready') ? 'rgba(0,170,0,0.1)' : 'rgba(230,0,18,0.1)',
-                            color: err.includes('valid') || err.includes('Ready') ? '#00AA00' : '#E60012',
-                            border: `1px solid ${err.includes('valid') || err.includes('Ready') ? '#00AA00' : '#E60012'}`,
-                          }}>
-                          {err}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {/* Found matches */}
-                  {scrapeResult.matches.length > 0 && (
-                    <div>
-                      <p className="font-pixel text-[7px] mb-2" style={{ color: '#00AA00' }}>
-                        FOUND {scrapeResult.matches.length} MATCH RESULTS
-                      </p>
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
-                        {scrapeResult.matches.map((m, i) => (
-                          <div key={i} className="flex items-center justify-between px-2 py-1" style={{ background: 'rgba(0,170,0,0.05)' }}>
-                            <span className="font-pixel text-[7px]" style={{ color: '#e8d5f5' }}>{m.homeTeam} {m.homeGoals}-{m.awayGoals} {m.awayTeam}</span>
-                            <span className="font-pixel text-[6px]" style={{ color: '#00AA00' }}>{m.status}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {/* No matches, no errors = tell user what happened */}
-                  {scrapeResult.matches.length === 0 && scrapeResult.errors.length === 0 && (
-                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(255,215,0,0.1)', color: '#FFD700', border: '1px solid #FFD700' }}>
-                      Scrape completed but no match results were found. Try again after games have finished.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Manual Paste Scores — fallback when scraping fails */}
-            <div className="retro-card p-4" style={{ borderColor: '#00AA00' }}>
-              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#00AA00' }}>
-                <Globe className="w-3 h-3" /> PASTE SCORES (FALLBACK)
-              </h3>
-              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
-                If scraping does not work, paste raw score text here from ESPN, Wikipedia, or any source. 
-                Format: "France 3-1 Senegal" or "Group A: Mexico 2-0 South Africa"
-              </p>
-              <textarea
-                value={pasteText}
-                onChange={e => { setPasteText(e.target.value); setPastePreview(null); }}
-                placeholder={`Paste scores here, e.g.:
-Group A: Mexico 2-0 South Africa
-Group B: USA 4-1 Paraguay
-Group C: Brazil 1-1 Morocco
-France 3-1 Senegal
-Argentina 3-0 Algeria`}
-                className="pixel-input w-full text-[10px] resize-none"
-                rows={6}
-              />
-              <div className="flex gap-2 mt-2">
-                <button onClick={handleParsePastedScores} disabled={!pasteText.trim()}
-                  className="pixel-btn green small">
-                  <RefreshCw className="w-3 h-3" /> PARSE
-                </button>
-                {pastePreview && pastePreview.length > 0 && (
-                  <button onClick={handleApplyPastedScores}
-                    className="pixel-btn gold small">
-                    APPLY {pastePreview.length} SCORES
-                  </button>
-                )}
-              </div>
-              {/* Parsed preview */}
-              {pastePreview && (
-                <div className="mt-2">
-                  {pastePreview.length === 0 ? (
-                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
-                      No scores found in pasted text. Try the format: "France 3-1 Senegal"
-                    </p>
-                  ) : (
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      <p className="font-pixel text-[7px] mb-1" style={{ color: '#00AA00' }}>
-                        FOUND {pastePreview.length} SCORES (click APPLY to save)
-                      </p>
-                      {pastePreview.map((m, i) => (
-                        <div key={i} className="flex items-center justify-between px-2 py-1" style={{ background: 'rgba(0,170,0,0.05)' }}>
-                          <span className="font-pixel text-[7px]" style={{ color: '#e8d5f5' }}>
-                            {m.homeTeam} {m.homeGoals}-{m.awayGoals} {m.awayTeam}
-                          </span>
-                          <span className="font-pixel text-[6px]" style={{ color: mapTeamName(m.homeTeam) ? '#00AA00' : '#E60012' }}>
-                            {mapTeamName(m.homeTeam) && mapTeamName(m.awayTeam) ? 'MAPPED' : 'UNMAPPED'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* Info */}
             <div className="p-3" style={{ backgroundColor: 'rgba(45,49,146,0.1)', borderLeft: '4px solid #2D3192' }}>
               <p className="text-[10px]" style={{ color: '#8899AA' }}>
-                <strong style={{ color: '#E8E8E8' }}>How results connect to scoring:</strong> The Results Engine reads match scores
-                and auto-calculates group standings (points, goal difference) and knockout progress (R32 to R16 to QF to SF to Final).
-                When you click APPLY, the derived TournamentResults are saved to the game state and all manager scores update instantly.
-                FETCH requires a one-time proxy deploy (cd functions; firebase deploy --only functions).
-                Paste Scores works immediately with no setup.
+                <strong style={{ color: '#E8E8E8' }}>How it works:</strong> The Results Engine reads match scores,
+                calculates group standings and knockout progress, then generates TournamentResults.
+                Click APPLY TO SCORING SYSTEM to update all manager scores.
+                FETCH requires a one-time proxy deploy. Paste Scores works immediately.
               </p>
             </div>
           </div>
@@ -1353,24 +973,6 @@ Argentina 3-0 Algeria`}
                 </span>
               </div>
             )}
-
-            {/* API Football Sync */}
-            <div className="retro-card p-4" style={{ borderColor: '#00AA00' }}>
-              <h3 className="font-pixel text-[10px] mb-2" style={{ color: '#00AA00' }}>&#9917; API-FOOTBALL SYNC</h3>
-              <p className="font-pixel text-[7px] mb-3" style={{ color: '#AABBCC' }}>
-                Fetch finished match results from API-Football. Free tier: 100 calls/day. Each sync uses ~1-2 calls.
-              </p>
-              <div className="flex gap-2 items-center">
-                <button onClick={handleSyncFromApi} className="pixel-btn gold small">
-                  &#8635; SYNC NOW
-                </button>
-                {apiStatus && (
-                  <span className="font-pixel text-[8px]" style={{ color: apiStatus.includes('FAILED') ? '#E60012' : '#00AA00' }}>
-                    {apiStatus}
-                  </span>
-                )}
-              </div>
-            </div>
 
             {/* Draft Mode Toggle */}
             <div className="retro-card p-4 flex items-center justify-between">

@@ -145,10 +145,11 @@ export function deriveResultsFromMatches(matches: Match[]): TournamentResults {
       if (i < 2) {
         // Top 2 qualify for knockout
         results[s.team].reachedKnockout = true;
-      } else if (s.played > 0) {
-        // 3rd/4th place with matches played = eliminated
+      } else if (s.played >= 3) {
+        // Only mark eliminated if ALL group matches (3) are played and team is 3rd/4th
         results[s.team].eliminated = true;
       }
+      // Note: teams with played < 3 are still in the tournament even if currently 3rd/4th
     }
   }
 
