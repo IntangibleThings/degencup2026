@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useGame } from '@/context/GameContext';
+import { getVersion } from '@/data/version';
 import { Menu, X, Trophy, Flame, Crosshair } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -60,14 +61,17 @@ export default function NavBar() {
           })}
         </div>
 
-        {state.currentUser && (
-          <div className="hidden md:flex items-center gap-2">
+        <div className="hidden md:flex items-center gap-2">
+          <span className="font-pixel text-[6px] px-1.5 py-0.5" style={{ color: '#6a5090', backgroundColor: 'rgba(106,80,144,0.15)' }}>
+            {getVersion()}
+          </span>
+          {state.currentUser && (
             <div className="w-7 h-7 flex items-center justify-center font-pixel text-[8px]"
               style={{ backgroundColor: '#2D3192', color: '#FFD700' }}>
               {state.currentUser[0]}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <button className="md:hidden p-2" onClick={() => setMobileOpen(!mobileOpen)} style={{ color: '#E8E8E8' }}>
           {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}

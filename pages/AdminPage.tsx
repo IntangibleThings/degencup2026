@@ -1,25 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useGame } from '@/context/GameContext';
 import { getAllTeams, TEAM_FLAGS, TEAM_NAMES, KNOWN_PLAYERS, DEFAULT_SETTINGS } from '@/data/tournament';
-import type { Tier, Wager } from '@/data/tournament';
+import type { Tier } from '@/data/tournament';
 import { syncResults, loadApiConfig, saveApiConfig } from '@/data/apiSync';
-import { getStoredKey, storeKey, scrapeScores, parseRawScores, mergeScrapedResults, mapTeamName } from '@/data/firecrawl';
+import { Lock, Unlock, Trash2, Users, Settings, Trophy, AlertTriangle, DollarSign, UserX, CreditCard, MessageSquareWarning, RefreshCw, Wifi, WifiOff, Clock, Key } from 'lucide-react';
 import type { ApiConfig } from '@/data/apiSync';
-import type { ScrapedMatch } from '@/data/firecrawl';
-import { Lock, Unlock, Trash2, Users, Settings, Trophy, AlertTriangle, UserX, MessageSquareWarning, RefreshCw, Wifi, WifiOff, Clock, Key, Check, X, Beer, Globe } from 'lucide-react';
 
 const ADMIN_PASSWORD = 'Dansucks123!';
-const ADMIN_AUTH_KEY = 'vibecup_admin_auth';
-
-const STATUS_BG: Record<Wager['status'], string> = {
-  pending_acceptance: 'rgba(200,128,255,0.2)',
-  live: 'rgba(0,255,136,0.15)', resolved: 'rgba(231,111,81,0.2)',
-  cancelled: 'rgba(100,100,100,0.2)', rejected: 'rgba(230,0,18,0.2)',
-};
-const STATUS_COLORS: Record<Wager['status'], string> = {
-  pending_acceptance: '#c880ff', live: '#00ff88', resolved: '#e76f51',
-  cancelled: '#777', rejected: '#e60012',
-};
 
 // Top Scorer Admin Component with Autocomplete
 function TopScorerAdmin({ current, onSet, bonus }: {
@@ -107,16 +94,10 @@ const TIER_OPTIONS: { value: Tier; label: string; color: string }[] = [
 ];
 
 export default function AdminPage() {
-  const { state, dispatch, lockDraft, unlockDraft, warnManager, setManagerActive, resetManagerCode, forceSync, addManager, loadFromCloud, firebaseEnabled, removeManager, saveSettings, resolveWager, loadSeedData, deleteWager, toggleWagerComments } = useGame();
+  const { state, dispatch, lockDraft, unlockDraft, setManagerPaid, warnManager, resetManagerCode, forceSync, addManager, loadFromCloud, firebaseEnabled, removeManager, saveSettings } = useGame();
 
-  // Auto-load from cloud on mount + check admin persistence
+  // Auto-load from cloud on mount
   useEffect(() => {
-    // Check if admin was previously authenticated
-    try {
-      const saved = localStorage.getItem(ADMIN_AUTH_KEY);
-      if (saved === '1') setAuthenticated(true);
-    } catch { /* ignore */ }
-
     loadFromCloud().then(count => {
       if (count > 0) console.log('[ADMIN] Auto-loaded', count, 'managers from cloud');
     });
@@ -125,21 +106,13 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
   const [cloudMsg, setCloudMsg] = useState('');
-  const [activeTab, setActiveTab] = useState<'managers' | 'tiers' | 'results' | 'sync' | 'settings' | 'degen-den'>('managers');
+  const [activeTab, setActiveTab] = useState<'managers' | 'tiers' | 'results' | 'sync' | 'settings'>('managers');
   const [apiConfig, setApiConfig] = useState<ApiConfig>(loadApiConfig);
   const [syncStatus, setSyncStatus] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [newManagerName, setNewManagerName] = useState('');
   const [message, setMessage] = useState('');
   const [apiStatus, setApiStatus] = useState('');
-  const [editingWager, setEditingWager] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ description: '', proposerMugs: 1, acceptorMugs: 1 });
-  const [savedFlash, setSavedFlash] = useState<string | null>(null);
-  const [firecrawlKey, setFirecrawlKey] = useState(getStoredKey() || '');
-  const [scrapeResult, setScrapeResult] = useState<{ matches: ScrapedMatch[]; errors: string[]; source?: string } | null>(null);
-  const [pasteText, setPasteText] = useState('');
-  const [pastePreview, setPastePreview] = useState<ScrapedMatch[] | null>(null);
-  const [isScraping, setIsScraping] = useState(false);
 
   // Results form state
   const [resultForm, setResultForm] = useState<Record<string, {
@@ -165,7 +138,6 @@ export default function AdminPage() {
   const handleLogin = () => {
     if (password === ADMIN_PASSWORD) {
       setAuthenticated(true);
-      try { localStorage.setItem(ADMIN_AUTH_KEY, '1'); } catch { /* ignore */ }
       // Initialize resultForm from existing results
       const allTeams = getAllTeams(state.settings.tiers);
       const init: typeof resultForm = {};
@@ -199,97 +171,25 @@ export default function AdminPage() {
     setTimeout(() => setMessage(''), 2000);
   };
 
-  const handleSetActive = (id: string, active: boolean) => {
-    setManagerActive(id, active);
-    setMessage(active ? 'MARKED ACTIVE' : 'MARKED INACTIVE');
-    setTimeout(() => setMessage(''), 1500);
-  };
-
   const handleWarnManager = (id: string) => {
     warnManager(id);
     setMessage('WARNING ISSUED');
     setTimeout(() => setMessage(''), 1500);
   };
 
-  const handleScrapeScores = async () => {
-    setIsScraping(true);
-    setScrapeResult(null);
-    try {
-      const result = await scrapeScores(firecrawlKey || undefined);
-      // If everything succeeded but no matches found, add a helpful message
-      if (result.matches.length === 0 && result.errors.length === 0) {
-        result.errors.push('No scores found on any source. The World Cup 2026 page may use JavaScript to load scores dynamically. Try again after more matches have finished.');
-      }
-      setScrapeResult(result);
-    } catch (err) {
-      setScrapeResult({
-        matches: [],
-        source: '',
-        errors: [`Unexpected error: ${err instanceof Error ? err.message : 'unknown'}`],
-      });
-    }
-    setIsScraping(false);
+  const handleSetPaid = (id: string, paid: boolean) => {
+    setManagerPaid(id, paid);
+    setMessage(paid ? 'MARKED PAID' : 'MARKED UNPAID');
+    setTimeout(() => setMessage(''), 1500);
   };
 
-  const handleTestKey = async () => {
-    setIsScraping(true);
-    setScrapeResult(null);
-    try {
-      const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${firecrawlKey}`,
-        },
-        body: JSON.stringify({
-          url: 'https://example.com',
-          formats: ['markdown'],
-          onlyMainContent: true,
-        }),
-      });
-      const data = await resp.json();
-      if (data.success || data.error?.includes('Invalid token')) {
-        setScrapeResult({
-          matches: [],
-          source: '',
-          errors: [`Key is valid! (${resp.status === 401 ? 'Auth confirmed' : 'API working'}) Ready to scrape.`],
-        });
-      } else {
-        setScrapeResult({
-          matches: [],
-          source: '',
-          errors: [`Key test failed: ${data.error || 'unknown error'}`],
-        });
-      }
-    } catch (err) {
-      setScrapeResult({
-        matches: [],
-        source: '',
-        errors: [`Network error — check your connection: ${err instanceof Error ? err.message : 'unknown'}`],
-      });
-    }
-    setIsScraping(false);
-  };
-
-  const handleParsePastedScores = () => {
-    const parsed = parseRawScores(pasteText);
-    setPastePreview(parsed);
-  };
-
-  const handleApplyPastedScores = () => {
-    if (!pastePreview || pastePreview.length === 0) return;
-    const cached = localStorage.getItem('wc2026_fixtures');
-    if (cached) {
-      const existing = JSON.parse(cached);
-      const merged = mergeScrapedResults(existing, pastePreview);
-      localStorage.setItem('wc2026_fixtures', JSON.stringify(merged));
-      localStorage.setItem('wc2026_data_source', 'firecrawl');
-      localStorage.setItem('wc2026_fixtures_last_fetch', Date.now().toString());
-      setPastePreview(null);
-      setPasteText('');
-      setSyncStatus({ message: `APPLIED ${pastePreview.length} SCORES`, type: 'success' });
-      setTimeout(() => setSyncStatus(null), 3000);
-    }
+  const handleKickUnpaid = async () => {
+    const unpaid = state.managers.filter(m => !m.paid);
+    if (unpaid.length === 0) { setMessage('NO UNPAID PLAYERS'); setTimeout(() => setMessage(''), 2000); return; }
+    if (!confirm(`KICK ${unpaid.length} UNPAID PLAYER${unpaid.length > 1 ? 'S' : ''}?`)) return;
+    for (const m of unpaid) { await removeManager(m.id); } // Delete from Firebase cloud
+    setMessage(`KICKED ${unpaid.length} PLAYER${unpaid.length > 1 ? 'S' : ''}`);
+    setTimeout(() => setMessage(''), 2000);
   };
 
   const handleSetTopScorerActual = async (name: string, country: string) => {
@@ -299,39 +199,12 @@ export default function AdminPage() {
     setTimeout(() => setSyncStatus(null), 2000);
   };
 
-  // Degen Den inline editing
-  const startEdit = (w: Wager) => {
-    setEditingWager(w.id);
-    setEditForm({ description: w.description, proposerMugs: w.proposerMugs, acceptorMugs: w.acceptorMugs });
-  };
-
-  const saveEdit = async (wagerId: string) => {
-    const w = state.wagers.find(x => x.id === wagerId);
-    if (w) {
-      const updated = { ...w, description: editForm.description, proposerMugs: editForm.proposerMugs, acceptorMugs: editForm.acceptorMugs };
-      dispatch({ type: 'SET_WAGERS', payload: state.wagers.map(x => x.id === wagerId ? updated : x) });
-      const { saveWager } = await import('@/lib/firebase');
-      await saveWager(updated as unknown as Record<string, unknown>);
-    }
-    setSavedFlash(wagerId);
-    setTimeout(() => setSavedFlash(null), 2000);
-    setEditingWager(null);
-  };
-
-  const cancelEdit = () => { setEditingWager(null); };
-
-  const handleAdminResolve = async (wagerId: string) => {
-    const w = state.wagers.find(x => x.id === wagerId);
-    if (!w) return;
-    const winner = prompt(`RESOLVE: Who won?\n1 = ${w.proposerName}\n2 = ${w.acceptorName}\n0 = Push/Void`);
-    if (winner === '1') { await resolveWager(wagerId, w.proposerId); triggerSaveFlash(wagerId); }
-    else if (winner === '2') { await resolveWager(wagerId, w.acceptorId); triggerSaveFlash(wagerId); }
-    else if (winner === '0') { await resolveWager(wagerId, null); triggerSaveFlash(wagerId); }
-  };
-
-  const triggerSaveFlash = (wagerId: string) => {
-    setSavedFlash(wagerId);
-    setTimeout(() => setSavedFlash(null), 2000);
+  const handleUpdatePayout = async (updates: Partial<typeof state.settings.payout>) => {
+    const newSettings = { ...state.settings, payout: { ...state.settings.payout, ...updates } };
+    dispatch({ type: 'SET_SETTINGS', payload: newSettings });
+    await saveSettings(newSettings);
+    setSyncStatus({ message: 'PAYOUT SAVED', type: 'success' });
+    setTimeout(() => setSyncStatus(null), 2000);
   };
 
   const handleSyncNow = async () => {
@@ -442,7 +315,7 @@ export default function AdminPage() {
                 </span>
               )}
               <span className="font-pixel text-[7px]" style={{ color: '#AABBCC' }}>
-                {state.managers.length} MGR / {state.managers.filter(m => m.active).length} ACTIVE
+                {state.managers.length} MANAGERS
               </span>
             </div>
           </div>
@@ -450,7 +323,7 @@ export default function AdminPage() {
             {message && (
               <span className="font-pixel text-[8px] px-2 py-1" style={{ backgroundColor: '#00AA00', color: '#F0F0F0' }}>{message}</span>
             )}
-            <button onClick={() => { setAuthenticated(false); try { localStorage.removeItem(ADMIN_AUTH_KEY); } catch { /* ignore */ } }} className="pixel-btn red small">LOGOUT</button>
+            <button onClick={() => setAuthenticated(false)} className="pixel-btn red small">LOGOUT</button>
           </div>
         </div>
 
@@ -458,7 +331,6 @@ export default function AdminPage() {
         <div className="flex gap-1 mb-6 overflow-x-auto">
           {[
             { key: 'managers' as const, label: 'MANAGERS', icon: Users },
-            { key: 'degen-den' as const, label: 'THE DEN', icon: Beer },
             { key: 'tiers' as const, label: 'TIERS', icon: Trophy },
             { key: 'results' as const, label: 'RESULTS', icon: Settings },
             { key: 'sync' as const, label: 'AUTO-SYNC', icon: RefreshCw },
@@ -540,6 +412,24 @@ export default function AdminPage() {
               <button onClick={handleAddManager} disabled={!newManagerName.trim()} className="pixel-btn green small">ADD</button>
             </div>
 
+            {/* Payment Summary */}
+            <div className="retro-card p-4 mb-4 flex items-center justify-between" style={{ borderColor: '#FFD700' }}>
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4" style={{ color: '#FFD700' }} />
+                <span className="font-pixel text-[10px]" style={{ color: '#FFD700' }}>
+                  {state.managers.filter(m => m.paid).length} / {state.managers.length} PAID
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-pixel text-[8px] px-2 py-1" style={{ backgroundColor: 'rgba(255,215,0,0.2)', color: '#FFD700' }}>
+                  {state.managers.filter(m => (m.warnings || 0) > 0).length} WARNED
+                </span>
+                <button onClick={handleKickUnpaid} className="pixel-btn red small">
+                  <UserX className="w-3 h-3 inline mr-1" /> KICK UNPAID
+                </button>
+              </div>
+            </div>
+
             {/* Manager List */}
             <div className="retro-card p-0 overflow-hidden">
               <div className="grid grid-cols-12 gap-1 px-2 py-2 font-pixel text-[7px]" style={{ backgroundColor: 'rgba(45,49,146,0.3)', color: '#8899AA' }}>
@@ -547,10 +437,10 @@ export default function AdminPage() {
                 <div className="col-span-2">REAL NAME</div>
                 <div className="col-span-1">TEAMS</div>
                 <div className="col-span-1">SUB</div>
+                <div className="col-span-1">PAID</div>
                 <div className="col-span-1">CODE</div>
                 <div className="col-span-1">TS</div>
                 <div className="col-span-1">WARN</div>
-                <div className="col-span-1">ACT</div>
                 <div className="col-span-2"></div>
               </div>
               {state.managers.map(m => (
@@ -560,6 +450,13 @@ export default function AdminPage() {
                   <div className="col-span-1 font-pixel text-[8px]" style={{ color: '#FFD700' }}>{m.teamCodes.length}/12</div>
                   <div className="col-span-1 font-pixel text-[7px]" style={{ color: m.submittedAt ? '#00AA00' : '#8899AA' }}>
                     {m.submittedAt ? 'Y' : 'N'}
+                  </div>
+                  <div className="col-span-1">
+                    <button onClick={() => handleSetPaid(m.id, !m.paid)}
+                      className="font-pixel text-[7px] px-1 py-0.5"
+                      style={{ backgroundColor: m.paid ? '#00AA00' : '#E60012', color: '#F0F0F0' }}>
+                      {m.paid ? 'PAID' : 'NO'}
+                    </button>
                   </div>
                   <div className="col-span-1 font-pixel text-[7px]" style={{ color: '#00AA00' }}>{m.code}</div>
                   <div className="col-span-1 font-pixel text-[7px]" style={{ color: m.topScorerGuess ? '#FFD700' : '#8899AA' }}>
@@ -572,25 +469,22 @@ export default function AdminPage() {
                       </span>
                     )}
                   </div>
-                  <div className="col-span-1">
-                    <button onClick={() => handleSetActive(m.id, !m.active)}
-                      className="font-pixel text-[7px] px-1 py-0.5"
-                      style={{ backgroundColor: m.active ? '#00AA00' : '#E60012', color: '#F0F0F0' }}>
-                      {m.active ? 'YES' : 'NO'}
-                    </button>
-                  </div>
                   <div className="col-span-2 text-right flex items-center justify-end gap-1">
                     <button onClick={() => { const newCode = resetManagerCode(m.id); setMessage(`RESET ${m.teamName || m.name} → ${newCode}`); setTimeout(() => setMessage(''), 3000); }}
                       className="p-1" style={{ color: '#2D3192' }} title="Reset code">
                       <Key className="w-3 h-3" />
                     </button>
-                    <button onClick={() => handleWarnManager(m.id)} className="p-1" style={{ color: '#FFD700' }} title="Send warning">
-                      <MessageSquareWarning className="w-3 h-3" />
-                    </button>
-                    <button onClick={() => handleRemoveManager(m.id)} className="p-1" style={{ color: '#E60012' }} title="Remove player">
-                      <UserX className="w-3 h-3" />
-                    </button>
-                    <button onClick={() => handleRemoveManager(m.id)} className="p-1" style={{ color: '#8899AA' }} title="Delete player">
+                    {!m.paid && (
+                      <button onClick={() => handleWarnManager(m.id)} className="p-1" style={{ color: '#FFD700' }} title="Send warning">
+                        <MessageSquareWarning className="w-3 h-3" />
+                      </button>
+                    )}
+                    {!m.paid && (
+                      <button onClick={() => handleRemoveManager(m.id)} className="p-1" style={{ color: '#E60012' }} title="Kick player">
+                        <UserX className="w-3 h-3" />
+                      </button>
+                    )}
+                    <button onClick={() => handleRemoveManager(m.id)} className="p-1" style={{ color: '#8899AA' }} title="Remove player">
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
@@ -804,238 +698,15 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* Firecrawl Score Scraping */}
-            <div className="retro-card p-4" style={{ borderColor: '#FF6B35' }}>
-              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#FF6B35' }}>
-                <Globe className="w-3 h-3" /> FIRECRAWL SCORE SCRAPER
-              </h3>
-              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
-                Scrape live scores from ESPN/Flashscore after games end. Free tier: 500 credits/month at <a href="https://firecrawl.dev" target="_blank" rel="noreferrer" style={{ color: '#FF6B35' }}>firecrawl.dev</a>. Each scrape = 1 credit.
-              </p>
-              <div className="flex gap-2 mb-3">
-                <input type="password" value={firecrawlKey}
-                  onChange={e => { setFirecrawlKey(e.target.value); storeKey(e.target.value); }}
-                  placeholder="fc_... YOUR FIRECRAWL KEY" className="pixel-input flex-1 text-[10px] py-2 px-3" />
-                <button onClick={handleTestKey} disabled={isScraping || !firecrawlKey}
-                  className="pixel-btn small" style={{ backgroundColor: '#2D3192', borderColor: '#2D3192', color: '#FFD700' }}>
-                  TEST
-                </button>
-                <button onClick={handleScrapeScores} disabled={isScraping || !firecrawlKey}
-                  className="pixel-btn small" style={{ backgroundColor: '#FF6B35', borderColor: '#FF6B35', color: '#fff' }}>
-                  <RefreshCw className={`w-3 h-3 ${isScraping ? 'animate-spin' : ''}`} />
-                  {isScraping ? '...' : 'SCRAPE'}
-                </button>
-              </div>
-              {/* Always show scrape status */}
-              {scrapeResult && (
-                <div className="mt-2">
-                  {/* Errors */}
-                  {scrapeResult.errors.length > 0 && (
-                    <div className="mb-2">
-                      {scrapeResult.errors.map((err, i) => (
-                        <p key={i} className="font-pixel text-[7px] p-2 mb-1"
-                          style={{
-                            background: err.includes('valid') || err.includes('Ready') ? 'rgba(0,170,0,0.1)' : 'rgba(230,0,18,0.1)',
-                            color: err.includes('valid') || err.includes('Ready') ? '#00AA00' : '#E60012',
-                            border: `1px solid ${err.includes('valid') || err.includes('Ready') ? '#00AA00' : '#E60012'}`,
-                          }}>
-                          {err}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {/* Found matches */}
-                  {scrapeResult.matches.length > 0 && (
-                    <div>
-                      <p className="font-pixel text-[7px] mb-2" style={{ color: '#00AA00' }}>
-                        FOUND {scrapeResult.matches.length} MATCH RESULTS
-                      </p>
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
-                        {scrapeResult.matches.map((m, i) => (
-                          <div key={i} className="flex items-center justify-between px-2 py-1" style={{ background: 'rgba(0,170,0,0.05)' }}>
-                            <span className="font-pixel text-[7px]" style={{ color: '#e8d5f5' }}>{m.homeTeam} {m.homeGoals}-{m.awayGoals} {m.awayTeam}</span>
-                            <span className="font-pixel text-[6px]" style={{ color: '#00AA00' }}>{m.status}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {/* No matches, no errors = tell user what happened */}
-                  {scrapeResult.matches.length === 0 && scrapeResult.errors.length === 0 && (
-                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(255,215,0,0.1)', color: '#FFD700', border: '1px solid #FFD700' }}>
-                      Scrape completed but no match results were found. Try again after games have finished.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Manual Paste Scores — fallback when scraping fails */}
-            <div className="retro-card p-4" style={{ borderColor: '#00AA00' }}>
-              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#00AA00' }}>
-                <Globe className="w-3 h-3" /> PASTE SCORES (FALLBACK)
-              </h3>
-              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
-                If scraping does not work, paste raw score text here from ESPN, Wikipedia, or any source. 
-                Format: "France 3-1 Senegal" or "Group A: Mexico 2-0 South Africa"
-              </p>
-              <textarea
-                value={pasteText}
-                onChange={e => { setPasteText(e.target.value); setPastePreview(null); }}
-                placeholder={`Paste scores here, e.g.:
-Group A: Mexico 2-0 South Africa
-Group B: USA 4-1 Paraguay
-Group C: Brazil 1-1 Morocco
-France 3-1 Senegal
-Argentina 3-0 Algeria`}
-                className="pixel-input w-full text-[10px] resize-none"
-                rows={6}
-              />
-              <div className="flex gap-2 mt-2">
-                <button onClick={handleParsePastedScores} disabled={!pasteText.trim()}
-                  className="pixel-btn green small">
-                  <RefreshCw className="w-3 h-3" /> PARSE
-                </button>
-                {pastePreview && pastePreview.length > 0 && (
-                  <button onClick={handleApplyPastedScores}
-                    className="pixel-btn gold small">
-                    APPLY {pastePreview.length} SCORES
-                  </button>
-                )}
-              </div>
-              {/* Parsed preview */}
-              {pastePreview && (
-                <div className="mt-2">
-                  {pastePreview.length === 0 ? (
-                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
-                      No scores found in pasted text. Try the format: "France 3-1 Senegal"
-                    </p>
-                  ) : (
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      <p className="font-pixel text-[7px] mb-1" style={{ color: '#00AA00' }}>
-                        FOUND {pastePreview.length} SCORES (click APPLY to save)
-                      </p>
-                      {pastePreview.map((m, i) => (
-                        <div key={i} className="flex items-center justify-between px-2 py-1" style={{ background: 'rgba(0,170,0,0.05)' }}>
-                          <span className="font-pixel text-[7px]" style={{ color: '#e8d5f5' }}>
-                            {m.homeTeam} {m.homeGoals}-{m.awayGoals} {m.awayTeam}
-                          </span>
-                          <span className="font-pixel text-[6px]" style={{ color: mapTeamName(m.homeTeam) ? '#00AA00' : '#E60012' }}>
-                            {mapTeamName(m.homeTeam) && mapTeamName(m.awayTeam) ? 'MAPPED' : 'UNMAPPED'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* Info */}
             <div className="p-3" style={{ backgroundColor: 'rgba(45,49,146,0.1)', borderLeft: '4px solid #2D3192' }}>
               <p className="text-[10px]" style={{ color: '#8899AA' }}>
                 <strong style={{ color: '#E8E8E8' }}>How it works:</strong> The auto-sync feature connects to a live sports API 
                 (API-Football) to fetch finished World Cup 2026 matches. It then automatically updates each team's tournament 
                 progress and recalculates all manager scores. Enable auto-sync and set your preferred interval — the system 
-                will check for new results automatically. Firecrawl is a free fallback that scrapes public score pages.
+                will check for new results automatically.
               </p>
             </div>
-          </div>
-        )}
-
-        {/* Degen Den Tab */}
-        {activeTab === 'degen-den' && (
-          <div className="space-y-4">
-            {/* Header stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {[
-                { label: 'TOTAL', value: state.wagers.length, color: '#c880ff' },
-                { label: 'PENDING', value: state.wagers.filter(w => w.status === 'pending_acceptance').length, color: '#c880ff' },
-                { label: 'LIVE', value: state.wagers.filter(w => w.status === 'live').length, color: '#00ff88' },
-                { label: 'RESOLVED', value: state.wagers.filter(w => w.status === 'resolved').length, color: '#e76f51' },
-              ].map(s => (
-                <div key={s.label} className="retro-card p-3 text-center">
-                  <div className="font-pixel text-lg" style={{ color: s.color }}>{s.value}</div>
-                  <div className="font-pixel text-[6px]" style={{ color: '#8899AA' }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {state.wagers.length === 0 && (
-              <div className="retro-card p-4 text-center">
-                <p className="font-pixel text-[8px] mb-3" style={{ color: '#8899AA' }}>NO FRIENDLY CHALLENGES YET. LOAD SAMPLE DATA?</p>
-                <button onClick={loadSeedData} className="pixel-btn purple small">LOAD SAMPLES</button>
-              </div>
-            )}
-
-            {/* All Wagers Table */}
-            {state.wagers.length > 0 && (
-              <>
-              {savedFlash && (
-                <div className="saved-toast flex items-center justify-center gap-2 py-2 px-4 mb-2"
-                  style={{ background: 'rgba(0,255,136,0.15)', border: '2px solid #00ff88' }}>
-                  <span style={{ color: '#00ff88', fontSize: 14 }}>&#10003;</span>
-                  <span className="font-pixel text-[9px]" style={{ color: '#00ff88' }}>SAVED!</span>
-                </div>
-              )}
-
-              <div className="retro-card p-0 overflow-hidden">
-                <div className="grid grid-cols-12 gap-1 px-2 py-2 font-pixel text-[7px]" style={{ backgroundColor: 'rgba(74, 32, 128, 0.3)', color: '#a080cc' }}>
-                  <div className="col-span-1">#</div>
-                  <div className="col-span-3">BET</div>
-                  <div className="col-span-2">PLAYERS</div>
-                  <div className="col-span-2">STATUS</div>
-                  <div className="col-span-2">MUGS</div>
-                  <div className="col-span-2">ACTIONS</div>
-                </div>
-                {state.wagers.map((w, i) => (
-                  <div key={w.id} className={`${savedFlash === w.id ? 'save-flash' : ''}`}>
-                    {editingWager === w.id ? (
-                      <div className="col-span-12 p-3" style={{ background: 'rgba(0, 200, 255, 0.08)', border: '2px solid #00c8ff' }}>
-                        <div className="font-pixel text-[8px] mb-3" style={{ color: '#00c8ff' }}>EDIT FRIENDLY CHALLENGE #{String(i + 1).padStart(3, '0')}</div>
-                        <div className="space-y-2">
-                          <div>
-                            <label className="font-pixel text-[6px] block mb-1" style={{ color: '#a080cc' }}>DESCRIPTION</label>
-                            <input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} className="pixel-input w-full" style={{ fontSize: 8 }} />
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="font-pixel text-[6px] block mb-1" style={{ color: '#a080cc' }}>{w.proposerName} MUGS</label>
-                              <input type="number" step="0.5" min="0.5" max="5" value={editForm.proposerMugs} onChange={e => setEditForm(f => ({ ...f, proposerMugs: Number(e.target.value) }))} className="pixel-input w-full" style={{ fontSize: 8 }} />
-                            </div>
-                            <div>
-                              <label className="font-pixel text-[6px] block mb-1" style={{ color: '#a080cc' }}>{w.acceptorName} MUGS</label>
-                              <input type="number" step="0.5" min="0.5" max="5" value={editForm.acceptorMugs} onChange={e => setEditForm(f => ({ ...f, acceptorMugs: Number(e.target.value) }))} className="pixel-input w-full" style={{ fontSize: 8 }} />
-                            </div>
-                          </div>
-                          <div className="flex gap-2 mt-3">
-                            <button onClick={() => saveEdit(w.id)} className="pixel-btn green small" style={{ fontSize: 7, padding: '4px 8px' }}><Check className="w-3 h-3" />SAVE</button>
-                            <button onClick={cancelEdit} className="pixel-btn red small" style={{ fontSize: 7, padding: '4px 8px' }}><X className="w-3 h-3" />CANCEL</button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-12 gap-1 px-2 py-2 items-center" style={{ borderBottom: '1px solid #1A1A2E' }}>
-                        <div className="col-span-1 font-pixel text-[7px]" style={{ color: '#c880ff' }}>#{String(i + 1).padStart(3, '0')}</div>
-                        <div className="col-span-3 font-pixel text-[6px] truncate" style={{ color: '#e8d5f5' }}>{w.description}</div>
-                        <div className="col-span-2 font-pixel text-[6px]" style={{ color: '#8899AA' }}>{w.proposerName} vs {w.acceptorName}</div>
-                        <div className="col-span-2">
-                          <span className="font-pixel text-[5px] px-1 py-0.5" style={{ backgroundColor: STATUS_BG[w.status], color: STATUS_COLORS[w.status] }}>{w.status.replace('_', ' ').toUpperCase()}</span>
-                        </div>
-                        <div className="col-span-2 font-pixel text-[6px]" style={{ color: '#c880ff' }}>{w.proposerMugs}M / {w.acceptorMugs}M</div>
-                        <div className="col-span-2 flex gap-1 flex-wrap">
-                          {w.status === 'live' && <button onClick={() => handleAdminResolve(w.id)} className="font-pixel text-[5px] px-1 py-0.5" style={{ backgroundColor: '#e76f51', color: '#fff' }}>SETTLE</button>}
-                          <button onClick={() => toggleWagerComments(w.id)} className="font-pixel text-[5px] px-1 py-0.5" style={{ backgroundColor: w.commentsLocked ? '#E60012' : '#00AA00', color: '#fff' }}>{w.commentsLocked ? 'UNLOCK' : 'LOCK'}</button>
-                          <button onClick={() => startEdit(w)} className="font-pixel text-[5px] px-1 py-0.5" style={{ backgroundColor: '#00c8ff', color: '#0d0418' }}>EDIT</button>
-                          <button onClick={() => { if (confirm('DELETE FRIENDLY CHALLENGE #' + String(i + 1).padStart(3, '0') + '?')) { deleteWager(w.id); triggerSaveFlash(w.id); } }} className="font-pixel text-[5px] px-1 py-0.5" style={{ backgroundColor: '#E60012', color: '#fff' }}>DEL</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              </>
-            )}
           </div>
         )}
 
@@ -1141,6 +812,45 @@ Argentina 3-0 Algeria`}
               bonus={sc.topScorerBonus}
             />
 
+            {/* Payout Settings */}
+            <div className="retro-card p-4">
+              <h3 className="font-pixel text-[10px] mb-3" style={{ color: '#FFD700' }}>
+                <DollarSign className="w-3 h-3 inline" /> PAYOUT SETTINGS
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="font-pixel text-[7px] block mb-1" style={{ color: '#8899AA' }}>BUY-IN ({state.settings.payout.currency})</label>
+                  <input type="number" value={state.settings.payout.buyIn}
+                    onChange={e => handleUpdatePayout({ buyIn: parseInt(e.target.value) || 0 })}
+                    className="pixel-input w-full text-[10px] py-1 px-2" />
+                </div>
+                <div>
+                  <label className="font-pixel text-[7px] block mb-1" style={{ color: '#FFD700' }}>1ST %</label>
+                  <input type="number" value={state.settings.payout.firstPlacePercent} min={0} max={100}
+                    onChange={e => handleUpdatePayout({ firstPlacePercent: parseInt(e.target.value) || 0 })}
+                    className="pixel-input w-full text-[10px] py-1 px-2" />
+                </div>
+                <div>
+                  <label className="font-pixel text-[7px] block mb-1" style={{ color: '#C0C0C0' }}>2ND %</label>
+                  <input type="number" value={state.settings.payout.secondPlacePercent} min={0} max={100}
+                    onChange={e => handleUpdatePayout({ secondPlacePercent: parseInt(e.target.value) || 0 })}
+                    className="pixel-input w-full text-[10px] py-1 px-2" />
+                </div>
+                <div>
+                  <label className="font-pixel text-[7px] block mb-1" style={{ color: '#CD7F32' }}>3RD %</label>
+                  <input type="number" value={state.settings.payout.thirdPlacePercent} min={0} max={100}
+                    onChange={e => handleUpdatePayout({ thirdPlacePercent: parseInt(e.target.value) || 0 })}
+                    className="pixel-input w-full text-[10px] py-1 px-2" />
+                </div>
+              </div>
+              <div className="mt-2 font-pixel text-[7px]" style={{ color: '#8899AA' }}>
+                TOTAL: {state.settings.payout.firstPlacePercent + state.settings.payout.secondPlacePercent + state.settings.payout.thirdPlacePercent}%
+                {state.settings.payout.firstPlacePercent + state.settings.payout.secondPlacePercent + state.settings.payout.thirdPlacePercent !== 100 && (
+                  <span style={{ color: '#E60012' }}> (SHOULD BE 100%)</span>
+                )}
+              </div>
+            </div>
+
             {/* Danger Zone */}
             <div className="retro-card p-4" style={{ borderColor: '#E60012' }}>
               <h3 className="font-pixel text-[10px] mb-2" style={{ color: '#E60012' }}>DANGER ZONE</h3>
@@ -1153,5 +863,5 @@ Argentina 3-0 Algeria`}
         )}
       </div>
     </div>
-   );
+  );
 }
