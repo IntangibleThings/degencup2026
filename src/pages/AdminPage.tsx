@@ -3,10 +3,11 @@ import { useGame } from '@/context/GameContext';
 import { getAllTeams, TEAM_FLAGS, TEAM_NAMES, KNOWN_PLAYERS, DEFAULT_SETTINGS } from '@/data/tournament';
 import type { Tier, Wager } from '@/data/tournament';
 import { syncResults, loadApiConfig, saveApiConfig } from '@/data/apiSync';
-import { getStoredKey, storeKey, scrapeScores, parseRawScores, mergeScrapedResults, mapTeamName } from '@/data/firecrawl';
+import { getStoredKey, storeKey, scrapeScores, parseRawScores, mergeScrapedResults, mapTeamName, mapTeamName as mapTeamCode } from '@/data/firecrawl';
 import { getStoredToken as getFDToken, storeToken as storeFDToken, fetchWorldCupMatches } from '@/data/footballdata';
 import { generateResultsPreview } from '@/data/resultsEngine';
 import type { TournamentResults } from '@/data/tournament';
+import type { Match } from '@/data/fixtures';
 import type { ApiConfig } from '@/data/apiSync';
 import type { ScrapedMatch } from '@/data/firecrawl';
 import { Lock, Unlock, Trash2, Users, Settings, Trophy, AlertTriangle, UserX, MessageSquareWarning, RefreshCw, Wifi, WifiOff, Clock, Key, Check, X, Beer, Globe } from 'lucide-react';
@@ -333,18 +334,55 @@ export default function AdminPage() {
 
   const handleApplyPastedScores = () => {
     if (!pastePreview || pastePreview.length === 0) return;
+
+    // Convert ScrapedMatch[] (full names) → Match[] (3-letter codes) for the results engine
+    const convertedMatches: Match[] = [];
+    for (const s of pastePreview) {
+      const homeCode = mapTeamCode(s.homeTeam);
+      const awayCode = mapTeamCode(s.awayTeam);
+      if (homeCode && awayCode) {
+        convertedMatches.push({
+          id: Date.now() + Math.random(),
+          date: new Date().toISOString(),
+          homeTeam: homeCode,
+          awayTeam: awayCode,
+          homeGoals: s.homeGoals,
+          awayGoals: s.awayGoals,
+          status: 'FT',
+          round: 'Group Stage',
+          venue: 'TBD',
+        });
+      }
+    }
+
+    // Also merge into fixture cache for Training Ground display
     const cached = localStorage.getItem('wc2026_fixtures');
     if (cached) {
-      const existing = JSON.parse(cached);
-      const merged = mergeScrapedResults(existing, pastePreview);
-      localStorage.setItem('wc2026_fixtures', JSON.stringify(merged));
-      localStorage.setItem('wc2026_data_source', 'firecrawl');
-      localStorage.setItem('wc2026_fixtures_last_fetch', Date.now().toString());
-      setPastePreview(null);
-      setPasteText('');
-      setSyncStatus({ message: `APPLIED ${pastePreview.length} SCORES`, type: 'success' });
-      setTimeout(() => setSyncStatus(null), 3000);
+      try {
+        const existing = JSON.parse(cached);
+        const merged = mergeScrapedResults(existing, pastePreview);
+        localStorage.setItem('wc2026_fixtures', JSON.stringify(merged));
+        localStorage.setItem('wc2026_data_source', 'firecrawl');
+        localStorage.setItem('wc2026_fixtures_last_fetch', Date.now().toString());
+      } catch { /* ignore cache merge errors */ }
     }
+
+    // Derive results from the converted matches and show preview
+    if (convertedMatches.length > 0) {
+      const preview = generateResultsPreview(convertedMatches);
+      setDerivedResults(preview.results);
+      setDerivedPreview({
+        groupSummaries: preview.groupSummaries,
+        knockoutSummary: preview.knockoutSummary,
+        teamsUpdated: preview.teamsUpdated,
+      });
+      setShowResultsPreview(true);
+    }
+
+    setPastePreview(null);
+    setPasteText('');
+    setSyncStatus({ message: `PARSED ${convertedMatches.length}/${pastePreview.length} SCORES — REVIEW PREVIEW BELOW`, type: 'success' });
+    setTimeout(() => setSyncStatus(null), 4000);
   };
 
   const handleSetTopScorerActual = async (name: string, country: string) => {
