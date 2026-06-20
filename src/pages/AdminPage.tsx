@@ -4,7 +4,7 @@ import { getAllTeams, TEAM_FLAGS, TEAM_NAMES, KNOWN_PLAYERS, DEFAULT_SETTINGS } 
 import type { Tier, Wager } from '@/data/tournament';
 import { syncResults, loadApiConfig, saveApiConfig } from '@/data/apiSync';
 import { getStoredKey, storeKey, scrapeScores, parseRawScores, mergeScrapedResults, mapTeamName } from '@/data/firecrawl';
-import { getStoredToken as getFDToken, storeToken as storeFDToken, fetchWorldCupMatches } from '@/data/footballdata';
+import { getStoredToken as getFDToken, storeToken as storeFDToken, fetchWorldCupMatches, parsePastedJson, getDirectApiUrl } from '@/data/footballdata';
 import { generateResultsPreview } from '@/data/resultsEngine';
 import type { TournamentResults } from '@/data/tournament';
 import type { ApiConfig } from '@/data/apiSync';
@@ -144,8 +144,13 @@ export default function AdminPage() {
   const [pastePreview, setPastePreview] = useState<ScrapedMatch[] | null>(null);
   const [isScraping, setIsScraping] = useState(false);
   const [fdToken, setFdToken] = useState(getFDToken() || '');
-  const [fdResult, setFdResult] = useState<{ matches: number; errors: string[] } | null>(null);
+  const [fdResult, setFdResult] = useState<{ matches: number; errors: string[]; method?: string } | null>(null);
   const [isFdFetching, setIsFdFetching] = useState(false);
+
+  // Paste JSON Response fallback state
+  const [jsonPasteText, setJsonPasteText] = useState('');
+  const [jsonPasteResult, setJsonPasteResult] = useState<{ matches: number; errors: string[] } | null>(null);
+  const [isJsonParsing, setIsJsonParsing] = useState(false);
 
   // Results engine preview state
   const [derivedResults, setDerivedResults] = useState<TournamentResults | null>(null);
@@ -293,13 +298,9 @@ export default function AdminPage() {
     setDerivedPreview(null);
     setShowResultsPreview(false);
 
-    const { matches, errors } = await fetchWorldCupMatches(fdToken || undefined);
+    const { matches, errors, method } = await fetchWorldCupMatches(fdToken || undefined);
 
     if (matches.length > 0) {
-      localStorage.setItem('wc2026_fixtures', JSON.stringify(matches));
-      localStorage.setItem('wc2026_data_source', 'footballdata');
-      localStorage.setItem('wc2026_fixtures_last_fetch', Date.now().toString());
-
       // Auto-derive results from the fetched matches
       const preview = generateResultsPreview(matches);
       setDerivedResults(preview.results);
@@ -311,8 +312,32 @@ export default function AdminPage() {
       setShowResultsPreview(true);
     }
 
-    setFdResult({ matches: matches.length, errors });
+    setFdResult({ matches: matches.length, errors, method });
     setIsFdFetching(false);
+  };
+
+  const handleParseJsonPaste = () => {
+    setIsJsonParsing(true);
+    setJsonPasteResult(null);
+    setDerivedResults(null);
+    setDerivedPreview(null);
+    setShowResultsPreview(false);
+
+    const { matches, errors } = parsePastedJson(jsonPasteText);
+
+    if (matches.length > 0) {
+      const preview = generateResultsPreview(matches);
+      setDerivedResults(preview.results);
+      setDerivedPreview({
+        groupSummaries: preview.groupSummaries,
+        knockoutSummary: preview.knockoutSummary,
+        teamsUpdated: preview.teamsUpdated,
+      });
+      setShowResultsPreview(true);
+    }
+
+    setJsonPasteResult({ matches: matches.length, errors });
+    setIsJsonParsing(false);
   };
 
   const handleApplyDerivedResults = () => {
@@ -908,7 +933,7 @@ export default function AdminPage() {
                   ))}
                   {fdResult.matches > 0 && (
                     <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(0,170,0,0.15)', color: '#00AA00', border: '1px solid #00AA00' }}>
-                      LOADED {fdResult.matches} MATCHES FROM football-data.org
+                      LOADED {fdResult.matches} MATCHES ({fdResult.method === 'proxy' ? 'VIA PROXY' : 'DIRECT'})
                     </p>
                   )}
                 </div>
@@ -1002,6 +1027,69 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
+
+            {/* Paste JSON Response — FOOLPROOF FALLBACK */}
+            <div className="retro-card p-4" style={{ borderColor: '#00c8ff' }}>
+              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#00c8ff' }}>
+                <Globe className="w-3 h-3" /> PASTE JSON RESPONSE (FOOLPROOF)
+              </h3>
+              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
+                If FETCH fails due to CORS, use this foolproof method: click the link below to open the API directly
+                (works in a new tab), copy the entire JSON response, and paste it here.
+              </p>
+
+              {/* Step 1: Open API in new tab */}
+              <div className="mb-3 p-2" style={{ backgroundColor: 'rgba(0,170,0,0.05)', border: '1px solid #00AA00' }}>
+                <p className="font-pixel text-[7px] mb-1" style={{ color: '#00AA00' }}>STEP 1: OPEN THIS LINK IN A NEW TAB</p>
+                <a
+                  href={getDirectApiUrl(fdToken || undefined)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-pixel text-[8px] break-all"
+                  style={{ color: '#00c8ff' }}
+                >
+                  {getDirectApiUrl(fdToken || undefined)}
+                </a>
+                <p className="font-pixel text-[6px] mt-1" style={{ color: '#8899AA' }}>
+                  (Right-click → Open in new tab. You&apos;ll see raw JSON. Select all and copy.)
+                </p>
+              </div>
+
+              {/* Step 2: Paste JSON */}
+              <div className="mb-3">
+                <p className="font-pixel text-[7px] mb-1" style={{ color: '#FFD700' }}>STEP 2: PASTE THE JSON RESPONSE HERE</p>
+                <textarea
+                  value={jsonPasteText}
+                  onChange={e => { setJsonPasteText(e.target.value); setJsonPasteResult(null); }}
+                  placeholder={`Paste the full JSON response here...`}
+                  className="pixel-input w-full text-[10px] resize-none"
+                  rows={4}
+                />
+                <div className="flex gap-2 mt-2">
+                  <button onClick={handleParseJsonPaste} disabled={isJsonParsing || !jsonPasteText.trim()}
+                    className="pixel-btn green small">
+                    <RefreshCw className={`w-3 h-3 ${isJsonParsing ? 'animate-spin' : ''}`} />
+                    {isJsonParsing ? 'PARSING...' : 'PARSE & DERIVE RESULTS'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Parse result */}
+              {jsonPasteResult && (
+                <div className="mt-2">
+                  {jsonPasteResult.errors.length > 0 && jsonPasteResult.errors.map((err, i) => (
+                    <p key={i} className="font-pixel text-[7px] p-2 mb-1" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
+                      {err}
+                    </p>
+                  ))}
+                  {jsonPasteResult.matches > 0 && (
+                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(0,170,0,0.15)', color: '#00AA00', border: '1px solid #00AA00' }}>
+                      LOADED {jsonPasteResult.matches} MATCHES FROM PASTED JSON
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Paste Scores — FALLBACK */}
             <div className="retro-card p-4" style={{ borderColor: '#FFD700' }}>
