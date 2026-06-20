@@ -6,10 +6,14 @@
 // 1. Go to https://www.football-data.org/client/register
 // 2. Confirm email, copy your API token
 // 3. Go to Admin → SYNC tab → Paste token → Click FETCH
+//
+// NOTE: Uses CORS proxy (corsproxy.io) because football-data.org blocks
+// browser requests from deployed websites (only allows localhost).
 
 import type { Match } from './fixtures';
 
 const API_BASE = 'https://api.football-data.org/v4';
+const CORS_PROXY = 'https://corsproxy.io/?';
 const COMPETITION_ID = 'WC'; // FIFA World Cup
 const TOKEN_STORAGE = 'vibecup_footballdata_token';
 const CACHE_KEY = 'wc2026_fixtures';
@@ -69,7 +73,9 @@ export async function fetchWorldCupMatches(token?: string): Promise<{
   }
 
   try {
-    const resp = await fetch(`${API_BASE}/competitions/${COMPETITION_ID}/matches`, {
+    // Route through CORS proxy because football-data.org blocks browser requests
+    const url = `${CORS_PROXY}${encodeURIComponent(`${API_BASE}/competitions/${COMPETITION_ID}/matches`)}`;
+    const resp = await fetch(url, {
       headers: { 'X-Auth-Token': t },
     });
 
