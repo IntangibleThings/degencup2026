@@ -80,7 +80,9 @@ function saveStateToLocal(state: AppState) {
       wagers: state.wagers,
       comments: state.comments,
     };
+    const resultCount = Object.keys(toSave.results || {}).length;
     localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(toSave));
+    console.log('[LOCAL SAVE] Saved', resultCount, 'team results +', toSave.managers.length, 'managers');
   } catch (err) {
     console.error('[LOCAL SAVE] Failed:', err);
   }
@@ -307,15 +309,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     // Load from localStorage first (works even without Firebase)
     const localState = loadStateFromLocal();
     if (localState) {
-      console.log('[GAME] Loaded from localStorage:', localState.managers?.length || 0, 'managers');
+      const resultCount = Object.keys(localState.results || {}).length;
+      console.log('[GAME] Loaded from localStorage:', localState.managers?.length || 0, 'managers,', resultCount, 'team results');
       if (localState.managers && localState.managers.length > 0) {
         dispatch({ type: 'SET_MANAGERS', payload: localState.managers });
       }
       if (localState.settings) {
         dispatch({ type: 'SET_SETTINGS', payload: migrateSettings(localState.settings as unknown as Record<string, unknown>) });
       }
-      if (localState.results) {
+      if (localState.results && Object.keys(localState.results).length > 0) {
         dispatch({ type: 'SET_RESULTS', payload: localState.results as TournamentResults });
+      } else {
+        // Fallback: try dedicated results key written by results engine
+        try {
+          const derivedRaw = localStorage.getItem('wc2026_derived_results');
+          if (derivedRaw) {
+            const derived = JSON.parse(derivedRaw) as TournamentResults;
+            if (Object.keys(derived).length > 0) {
+              console.log('[GAME] Fallback loaded', Object.keys(derived).length, 'results from wc2026_derived_results');
+              dispatch({ type: 'SET_RESULTS', payload: derived });
+            }
+          }
+        } catch { /* ignore fallback errors */ }
       }
       if (localState.wagers && localState.wagers.length > 0) {
         dispatch({ type: 'SET_WAGERS', payload: localState.wagers as Wager[] });

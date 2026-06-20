@@ -109,7 +109,7 @@ const TIER_OPTIONS: { value: Tier; label: string; color: string }[] = [
 ];
 
 export default function AdminPage() {
-  const { state, dispatch, lockDraft, unlockDraft, warnManager, setManagerActive, resetManagerCode, forceSync, addManager, loadFromCloud, firebaseEnabled, removeManager, saveSettings, resolveWager, loadSeedData, deleteWager, toggleWagerComments } = useGame();
+  const { state, dispatch, lockDraft, unlockDraft, warnManager, setManagerActive, resetManagerCode, forceSync, addManager, loadFromCloud, firebaseEnabled, removeManager, saveSettings, saveResults, resolveWager, loadSeedData, deleteWager, toggleWagerComments } = useGame();
 
   // Auto-load from cloud on mount + check admin persistence
   useEffect(() => {
@@ -223,16 +223,24 @@ export default function AdminPage() {
         teamsUpdated: preview.teamsUpdated,
       });
       setShowResultsPreview(true);
+      // Auto-apply and save fetched results
+      dispatch({ type: 'SET_RESULTS', payload: preview.results });
+      await saveResults(preview.results);
+      console.log('[ADMIN] Fetched results auto-applied:', preview.teamsUpdated, 'teams');
     }
 
     setFdResult({ matches: matches.length, errors, method });
     setIsFdFetching(false);
   };
 
-  const handleApplyDerivedResults = () => {
+  const handleApplyDerivedResults = async () => {
     if (!derivedResults) return;
+    // Dispatch to React state (immediate standings update)
     dispatch({ type: 'SET_RESULTS', payload: derivedResults });
-    setSyncStatus({ message: `APPLIED RESULTS FOR ${derivedPreview?.teamsUpdated || 0} TEAMS`, type: 'success' });
+    // Explicitly persist to localStorage + Firebase (belt and suspenders)
+    await saveResults(derivedResults);
+    console.log('[ADMIN] Results saved explicitly:', Object.keys(derivedResults).length, 'teams');
+    setSyncStatus({ message: `APPLIED & SAVED RESULTS FOR ${derivedPreview?.teamsUpdated || 0} TEAMS`, type: 'success' });
     setShowResultsPreview(false);
     setDerivedResults(null);
     setDerivedPreview(null);
