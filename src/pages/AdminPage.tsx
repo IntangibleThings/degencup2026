@@ -4,7 +4,7 @@ import { getAllTeams, TEAM_FLAGS, TEAM_NAMES, KNOWN_PLAYERS, DEFAULT_SETTINGS } 
 import type { Tier, Wager } from '@/data/tournament';
 import { syncResults, loadApiConfig, saveApiConfig } from '@/data/apiSync';
 import { getStoredKey, storeKey, scrapeScores, parseRawScores, mergeScrapedResults, mapTeamName } from '@/data/firecrawl';
-import { getStoredToken as getFDToken, storeToken as storeFDToken, fetchWorldCupMatches, parsePastedJson, getDirectApiUrl } from '@/data/footballdata';
+import { getStoredToken as getFDToken, storeToken as storeFDToken, fetchWorldCupMatches } from '@/data/footballdata';
 import { generateResultsPreview } from '@/data/resultsEngine';
 import type { TournamentResults } from '@/data/tournament';
 import type { ApiConfig } from '@/data/apiSync';
@@ -146,11 +146,6 @@ export default function AdminPage() {
   const [fdToken, setFdToken] = useState(getFDToken() || '');
   const [fdResult, setFdResult] = useState<{ matches: number; errors: string[]; method?: string } | null>(null);
   const [isFdFetching, setIsFdFetching] = useState(false);
-
-  // Paste JSON Response fallback state
-  const [jsonPasteText, setJsonPasteText] = useState('');
-  const [jsonPasteResult, setJsonPasteResult] = useState<{ matches: number; errors: string[] } | null>(null);
-  const [isJsonParsing, setIsJsonParsing] = useState(false);
 
   // Results engine preview state
   const [derivedResults, setDerivedResults] = useState<TournamentResults | null>(null);
@@ -301,7 +296,6 @@ export default function AdminPage() {
     const { matches, errors, method } = await fetchWorldCupMatches(fdToken || undefined);
 
     if (matches.length > 0) {
-      // Auto-derive results from the fetched matches
       const preview = generateResultsPreview(matches);
       setDerivedResults(preview.results);
       setDerivedPreview({
@@ -314,30 +308,6 @@ export default function AdminPage() {
 
     setFdResult({ matches: matches.length, errors, method });
     setIsFdFetching(false);
-  };
-
-  const handleParseJsonPaste = () => {
-    setIsJsonParsing(true);
-    setJsonPasteResult(null);
-    setDerivedResults(null);
-    setDerivedPreview(null);
-    setShowResultsPreview(false);
-
-    const { matches, errors } = parsePastedJson(jsonPasteText);
-
-    if (matches.length > 0) {
-      const preview = generateResultsPreview(matches);
-      setDerivedResults(preview.results);
-      setDerivedPreview({
-        groupSummaries: preview.groupSummaries,
-        knockoutSummary: preview.knockoutSummary,
-        teamsUpdated: preview.teamsUpdated,
-      });
-      setShowResultsPreview(true);
-    }
-
-    setJsonPasteResult({ matches: matches.length, errors });
-    setIsJsonParsing(false);
   };
 
   const handleApplyDerivedResults = () => {
@@ -370,20 +340,6 @@ export default function AdminPage() {
       localStorage.setItem('wc2026_fixtures', JSON.stringify(merged));
       localStorage.setItem('wc2026_data_source', 'firecrawl');
       localStorage.setItem('wc2026_fixtures_last_fetch', Date.now().toString());
-
-      // Auto-derive results from merged matches
-      try {
-        const allMatches = JSON.parse(localStorage.getItem('wc2026_fixtures') || '[]');
-        const preview = generateResultsPreview(allMatches);
-        setDerivedResults(preview.results);
-        setDerivedPreview({
-          groupSummaries: preview.groupSummaries,
-          knockoutSummary: preview.knockoutSummary,
-          teamsUpdated: preview.teamsUpdated,
-        });
-        setShowResultsPreview(true);
-      } catch { /* ignore auto-derive errors */ }
-
       setPastePreview(null);
       setPasteText('');
       setSyncStatus({ message: `APPLIED ${pastePreview.length} SCORES`, type: 'success' });
@@ -926,11 +882,31 @@ export default function AdminPage() {
               </div>
               {fdResult && (
                 <div className="mt-2">
-                  {fdResult.errors.length > 0 && fdResult.errors.map((err, i) => (
-                    <p key={i} className="font-pixel text-[7px] p-2 mb-1" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
-                      {err}
-                    </p>
-                  ))}
+                  {fdResult.errors.length > 0 && (
+                    <div className="space-y-1">
+                      {fdResult.errors.map((err, i) => (
+                        <p key={i} className="font-pixel text-[7px] p-2 mb-1" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
+                          {err}
+                        </p>
+                      ))}
+                      <div className="p-2 mt-2" style={{ backgroundColor: 'rgba(0,200,255,0.05)', border: '1px solid #00c8ff' }}>
+                        <p className="font-pixel text-[7px] mb-1" style={{ color: '#00c8ff' }}>TO FIX: DEPLOY THE PROXY FUNCTION</p>
+                        <p className="font-pixel text-[6px] mb-1" style={{ color: '#8899AA' }}>
+                          Your token is valid but football-data.org blocks browser requests from deployed sites.
+                          The proxy function is already written. Deploy it once and FETCH will work forever:
+                        </p>
+                        <ol className="font-pixel text-[6px] space-y-0.5 ml-3" style={{ color: '#E8E8E8' }}>
+                          <li>1. cd functions</li>
+                          <li>2. npm install</li>
+                          <li>3. firebase deploy --only functions</li>
+                          <li>4. Come back and click FETCH again</li>
+                        </ol>
+                        <p className="font-pixel text-[6px] mt-1" style={{ color: '#8899AA' }}>
+                          Or use Paste Scores below (works immediately, no setup).
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {fdResult.matches > 0 && (
                     <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(0,170,0,0.15)', color: '#00AA00', border: '1px solid #00AA00' }}>
                       LOADED {fdResult.matches} MATCHES ({fdResult.method === 'proxy' ? 'VIA PROXY' : 'DIRECT'})
@@ -1027,69 +1003,6 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
-
-            {/* Paste JSON Response — FOOLPROOF FALLBACK */}
-            <div className="retro-card p-4" style={{ borderColor: '#00c8ff' }}>
-              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#00c8ff' }}>
-                <Globe className="w-3 h-3" /> PASTE JSON RESPONSE (FOOLPROOF)
-              </h3>
-              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
-                If FETCH fails due to CORS, use this foolproof method: click the link below to open the API directly
-                (works in a new tab), copy the entire JSON response, and paste it here.
-              </p>
-
-              {/* Step 1: Open API in new tab */}
-              <div className="mb-3 p-2" style={{ backgroundColor: 'rgba(0,170,0,0.05)', border: '1px solid #00AA00' }}>
-                <p className="font-pixel text-[7px] mb-1" style={{ color: '#00AA00' }}>STEP 1: OPEN THIS LINK IN A NEW TAB</p>
-                <a
-                  href={getDirectApiUrl(fdToken || undefined)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-pixel text-[8px] break-all"
-                  style={{ color: '#00c8ff' }}
-                >
-                  {getDirectApiUrl(fdToken || undefined)}
-                </a>
-                <p className="font-pixel text-[6px] mt-1" style={{ color: '#8899AA' }}>
-                  (Right-click → Open in new tab. You&apos;ll see raw JSON. Select all and copy.)
-                </p>
-              </div>
-
-              {/* Step 2: Paste JSON */}
-              <div className="mb-3">
-                <p className="font-pixel text-[7px] mb-1" style={{ color: '#FFD700' }}>STEP 2: PASTE THE JSON RESPONSE HERE</p>
-                <textarea
-                  value={jsonPasteText}
-                  onChange={e => { setJsonPasteText(e.target.value); setJsonPasteResult(null); }}
-                  placeholder={`Paste the full JSON response here...`}
-                  className="pixel-input w-full text-[10px] resize-none"
-                  rows={4}
-                />
-                <div className="flex gap-2 mt-2">
-                  <button onClick={handleParseJsonPaste} disabled={isJsonParsing || !jsonPasteText.trim()}
-                    className="pixel-btn green small">
-                    <RefreshCw className={`w-3 h-3 ${isJsonParsing ? 'animate-spin' : ''}`} />
-                    {isJsonParsing ? 'PARSING...' : 'PARSE & DERIVE RESULTS'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Parse result */}
-              {jsonPasteResult && (
-                <div className="mt-2">
-                  {jsonPasteResult.errors.length > 0 && jsonPasteResult.errors.map((err, i) => (
-                    <p key={i} className="font-pixel text-[7px] p-2 mb-1" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
-                      {err}
-                    </p>
-                  ))}
-                  {jsonPasteResult.matches > 0 && (
-                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(0,170,0,0.15)', color: '#00AA00', border: '1px solid #00AA00' }}>
-                      LOADED {jsonPasteResult.matches} MATCHES FROM PASTED JSON
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
 
             {/* Paste Scores — FALLBACK */}
             <div className="retro-card p-4" style={{ borderColor: '#FFD700' }}>
@@ -1216,15 +1129,75 @@ Argentina 3-0 Algeria`}
               )}
             </div>
 
+            {/* Manual Paste Scores — fallback when scraping fails */}
+            <div className="retro-card p-4" style={{ borderColor: '#00AA00' }}>
+              <h3 className="font-pixel text-[10px] mb-2 flex items-center gap-2" style={{ color: '#00AA00' }}>
+                <Globe className="w-3 h-3" /> PASTE SCORES (FALLBACK)
+              </h3>
+              <p className="text-[10px] mb-3" style={{ color: '#8899AA' }}>
+                If scraping does not work, paste raw score text here from ESPN, Wikipedia, or any source. 
+                Format: "France 3-1 Senegal" or "Group A: Mexico 2-0 South Africa"
+              </p>
+              <textarea
+                value={pasteText}
+                onChange={e => { setPasteText(e.target.value); setPastePreview(null); }}
+                placeholder={`Paste scores here, e.g.:
+Group A: Mexico 2-0 South Africa
+Group B: USA 4-1 Paraguay
+Group C: Brazil 1-1 Morocco
+France 3-1 Senegal
+Argentina 3-0 Algeria`}
+                className="pixel-input w-full text-[10px] resize-none"
+                rows={6}
+              />
+              <div className="flex gap-2 mt-2">
+                <button onClick={handleParsePastedScores} disabled={!pasteText.trim()}
+                  className="pixel-btn green small">
+                  <RefreshCw className="w-3 h-3" /> PARSE
+                </button>
+                {pastePreview && pastePreview.length > 0 && (
+                  <button onClick={handleApplyPastedScores}
+                    className="pixel-btn gold small">
+                    APPLY {pastePreview.length} SCORES
+                  </button>
+                )}
+              </div>
+              {/* Parsed preview */}
+              {pastePreview && (
+                <div className="mt-2">
+                  {pastePreview.length === 0 ? (
+                    <p className="font-pixel text-[7px] p-2" style={{ background: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
+                      No scores found in pasted text. Try the format: "France 3-1 Senegal"
+                    </p>
+                  ) : (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      <p className="font-pixel text-[7px] mb-1" style={{ color: '#00AA00' }}>
+                        FOUND {pastePreview.length} SCORES (click APPLY to save)
+                      </p>
+                      {pastePreview.map((m, i) => (
+                        <div key={i} className="flex items-center justify-between px-2 py-1" style={{ background: 'rgba(0,170,0,0.05)' }}>
+                          <span className="font-pixel text-[7px]" style={{ color: '#e8d5f5' }}>
+                            {m.homeTeam} {m.homeGoals}-{m.awayGoals} {m.awayTeam}
+                          </span>
+                          <span className="font-pixel text-[6px]" style={{ color: mapTeamName(m.homeTeam) ? '#00AA00' : '#E60012' }}>
+                            {mapTeamName(m.homeTeam) && mapTeamName(m.awayTeam) ? 'MAPPED' : 'UNMAPPED'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Info */}
             <div className="p-3" style={{ backgroundColor: 'rgba(45,49,146,0.1)', borderLeft: '4px solid #2D3192' }}>
               <p className="text-[10px]" style={{ color: '#8899AA' }}>
-                <strong style={{ color: '#E8E8E8' }}>How results connect to scoring:</strong> When you FETCH from football-data.org
-                or APPLY pasted scores, the <strong style={{ color: '#00c8ff' }}>Results Engine</strong> automatically calculates
-                group standings (points, goal difference) and tracks knockout progress (R32 → R16 → QF → SF → Final → Winner).
-                A preview appears showing exactly what was derived. Click <strong style={{ color: '#00AA00' }}>APPLY TO SCORING SYSTEM</strong>
-                to update all manager scores. The engine knows your scoring rules and maps each team's achievement to the correct
-                point values (group position + knockout rounds + top scorer bonus).
+                <strong style={{ color: '#E8E8E8' }}>How results connect to scoring:</strong> The Results Engine reads match scores
+                and auto-calculates group standings (points, goal difference) and knockout progress (R32 to R16 to QF to SF to Final).
+                When you click APPLY, the derived TournamentResults are saved to the game state and all manager scores update instantly.
+                FETCH requires a one-time proxy deploy (cd functions; firebase deploy --only functions).
+                Paste Scores works immediately with no setup.
               </p>
             </div>
           </div>

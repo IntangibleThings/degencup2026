@@ -1,31 +1,59 @@
-Using Node.js 20, Tailwind CSS v3.4.19, and Vite v7.2.4
+# Degen Cup 2026 — Info
 
-Tailwind CSS has been set up with the shadcn theme
+## Deploy Proxy Function (REQUIRED for live scores)
 
-Setup complete: /mnt/agents/output/app
+Your site is deployed at a public URL. football-data.org blocks browser requests from deployed sites (CORS policy). You MUST deploy the Cloud Function proxy to fetch live scores.
 
-Components (40+):
-  accordion, alert-dialog, alert, aspect-ratio, avatar, badge, breadcrumb,
-  button-group, button, calendar, card, carousel, chart, checkbox, collapsible,
-  command, context-menu, dialog, drawer, dropdown-menu, empty, field, form,
-  hover-card, input-group, input-otp, input, item, kbd, label, menubar,
-  navigation-menu, pagination, popover, progress, radio-group, resizable,
-  scroll-area, select, separator, sheet, sidebar, skeleton, slider, sonner,
-  spinner, switch, table, tabs, textarea, toggle-group, toggle, tooltip
+### One-Time Setup (5 minutes)
 
-Usage:
-  import { Button } from '@/components/ui/button'
-  import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+**Step 1:** Install Firebase CLI
+```bash
+npm install -g firebase-tools
+```
 
-Structure:
-  src/sections/        Page sections
-  src/hooks/           Custom hooks
-  src/types/           Type definitions
-  src/App.css          Styles specific to the Webapp
-  src/App.tsx          Root React component
-  src/index.css        Global styles
-  src/main.tsx         Entry point for rendering the Webapp
-  index.html           Entry point for the Webapp
-  tailwind.config.js   Configures Tailwind's theme, plugins, etc.
-  vite.config.ts       Main build and dev server settings for Vite
-  postcss.config.js    Config file for CSS post-processing tools
+**Step 2:** Login to Firebase
+```bash
+firebase login
+```
+
+**Step 3:** Deploy the proxy function
+```bash
+cd functions
+npm install
+firebase deploy --only functions
+```
+
+Wait ~2 minutes. You'll see:
+```
+Function URL: https://asia-southeast2-degen-cup-2026-b42ca.cloudfunctions.net/proxyFootballData
+```
+
+**Step 4:** Go to Admin → SYNC tab → Click FETCH. It will now work.
+
+---
+
+## Alternative: Paste Scores (No Setup)
+
+If you don't want to deploy the proxy, use the **Paste Scores** section in Admin → SYNC tab. Copy scores from any website (ESPN, BBC, Wikipedia) and paste them. The system parses them automatically.
+
+---
+
+## Quick Start
+
+```bash
+git clone <repo-url>
+cd app
+npm install
+npm run dev
+```
+
+Open http://localhost:3000, go to /#/admin, password is `Dansucks123!`
+
+## Features
+- World Cup 2026 fantasy draft (2 favorites, 4 mid, 6 underdogs)
+- Live score sync via football-data.org (deploy proxy first)
+- Beer mug friendly challenges (The Den)
+- Training Ground with fixtures & standings
+
+## Tech Stack
+React 19 + TypeScript + Vite + Tailwind CSS + Firebase
