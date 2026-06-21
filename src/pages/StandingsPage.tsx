@@ -32,9 +32,11 @@ export default function StandingsPage() {
   const getLastUpdated = (): string => {
     try {
       const raw = localStorage.getItem('wc2026_derived_at') || localStorage.getItem('wc2026_fixtures_last_fetch');
-      if (!raw) return 'Not yet updated';
-      const date = new Date(raw);
-      // Format as HKT (UTC+8)
+      if (!raw || raw === 'null') return 'Not yet updated';
+      // Handle both ISO strings and numeric timestamps
+      const timestamp = /^\d+$/.test(raw) ? parseInt(raw, 10) : raw;
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return 'Not yet updated';
       return date.toLocaleString('en-HK', {
         timeZone: 'Asia/Hong_Kong',
         year: 'numeric',
@@ -45,7 +47,7 @@ export default function StandingsPage() {
         hour12: true,
       }) + ' HKT';
     } catch {
-      return 'Unknown';
+      return 'Not yet updated';
     }
   };
 
@@ -53,7 +55,7 @@ export default function StandingsPage() {
     <div className="min-h-screen px-4 py-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <h1 className="font-pixel text-lg md:text-2xl mb-1" style={{ color: '#FFD700' }}>LIVE STANDINGS</h1>
+        <h1 className="font-pixel text-lg md:text-2xl mb-1" style={{ color: '#FFD700' }}>STANDINGS</h1>
         <p className="font-pixel text-[8px] mb-2" style={{ color: '#8899AA' }}>
           MANAGERS RANKED BY TOTAL POINTS
         </p>
