@@ -14,6 +14,7 @@
 import type { Match } from './fixtures';
 import type { TournamentResults } from './tournament';
 import { GROUPS as TOURNAMENT_GROUPS, TEAM_FLAGS } from './tournament';
+import { getScoredMatches } from './matchMatrix';
 
 // Build group name → teams map from canonical tournament data
 const GROUPS: Record<string, string[]> = {};
@@ -105,6 +106,16 @@ function getKnockoutRound(round: string): 'r32' | 'r16' | 'qf' | 'sf' | 'final' 
   if (r === 'FINAL' || (r.includes('FINAL') && !r.includes('3RD') && !r.includes('THIRD') && !r.includes('QUARTER'))) return 'final';
   if (r.includes('3RD') || r.includes('THIRD')) return '3rd';
   return null;
+}
+
+/**
+ * Derive TournamentResults from the Match Matrix.
+ * Reads ALL scored matches from the matrix and calculates cumulative standings.
+ * This is the main entry point — always reads from the matrix for cumulative results.
+ */
+export function deriveResultsFromMatrix(): TournamentResults {
+  const matches = getScoredMatches();
+  return deriveResultsFromMatches(matches as unknown as Match[]);
 }
 
 /**
@@ -232,6 +243,15 @@ export function deriveResultsFromMatches(matches: Match[]): TournamentResults {
   // (already handled by the scoring system reading individual booleans)
 
   return results;
+}
+
+/**
+ * Generate preview from the Match Matrix (cumulative — reads ALL scored matches).
+ * This is the main entry point for the admin preview UI.
+ */
+export function generateResultsPreviewFromMatrix(): ReturnType<typeof generateResultsPreview> {
+  const matches = getScoredMatches();
+  return generateResultsPreview(matches as unknown as Match[]);
 }
 
 /**

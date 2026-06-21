@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { useGame } from '@/context/GameContext';
 import { getAllTeams, TEAM_FLAGS, TEAM_NAMES, KNOWN_PLAYERS, DEFAULT_SETTINGS } from '@/data/tournament';
 import type { Tier, Wager } from '@/data/tournament';
-import { parseRawScores, mergeScrapedResults, mapTeamName, mapTeamName as mapTeamCode } from '@/data/firecrawl';
+import { parseRawScores, mapTeamName } from '@/data/firecrawl';
 import { getStoredToken as getFDToken, storeToken as storeFDToken, fetchWorldCupMatches } from '@/data/footballdata';
-import { generateResultsPreview } from '@/data/resultsEngine';
+import { generateResultsPreviewFromMatrix, deriveResultsFromMatrix } from '@/data/resultsEngine';
+import { parsePastedScoresToMatrix, getMatrix, getMatrixStats, isMatchScored, type MatrixMatch } from '@/data/matchMatrix';
 import type { TournamentResults } from '@/data/tournament';
-import type { Match } from '@/data/fixtures';
 import type { ScrapedMatch } from '@/data/firecrawl';
 import { Lock, Unlock, Trash2, Users, Settings, Trophy, AlertTriangle, UserX, MessageSquareWarning, RefreshCw, Wifi, WifiOff, Key, Check, X, Beer, Globe } from 'lucide-react';
 
@@ -129,6 +129,7 @@ export default function AdminPage() {
   const [cloudMsg, setCloudMsg] = useState('');
   const [activeTab, setActiveTab] = useState<'managers' | 'tiers' | 'results' | 'sync' | 'settings' | 'degen-den'>('managers');
   const [syncStatus, setSyncStatus] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [showMatrixGrid, setShowMatrixGrid] = useState(false);
   const [newManagerName, setNewManagerName] = useState('');
   const [message, setMessage] = useState('');
   const [editingWager, setEditingWager] = useState<string | null>(null);
@@ -215,7 +216,26 @@ export default function AdminPage() {
     const { matches, errors, method } = await fetchWorldCupMatches(fdToken || undefined);
 
     if (matches.length > 0) {
-      const preview = generateResultsPreview(matches);
+      // Fill fetched scores into the match matrix
+      const { updateMatchScore } = await import('@/data/matchMatrix');
+      let filled = 0;
+      for (const m of matches) {
+        if (m.homeGoals !== null && m.awayGoals !== null) {
+          // Find match in matrix by team codes
+          const matrix = getMatrix();
+          const match = matrix.find(
+            x => (x.homeTeam === m.homeTeam && x.awayTeam === m.awayTeam) ||
+                 (x.homeTeam === m.awayTeam && x.awayTeam === m.homeTeam)
+          );
+          if (match && !isMatchScored(match.id)) {
+            updateMatchScore(match.id, m.homeGoals, m.awayGoals);
+            filled++;
+          }
+        }
+      }
+
+      // Derive results from the full matrix (cumulative)
+      const preview = generateResultsPreviewFromMatrix();
       setDerivedResults(preview.results);
       setDerivedPreview({
         groupSummaries: preview.groupSummaries,
@@ -223,10 +243,10 @@ export default function AdminPage() {
         teamsUpdated: preview.teamsUpdated,
       });
       setShowResultsPreview(true);
-      // Auto-apply and save fetched results
       dispatch({ type: 'SET_RESULTS', payload: preview.results });
       await saveResults(preview.results);
-      console.log('[ADMIN] Fetched results auto-applied:', preview.teamsUpdated, 'teams');
+      localStorage.setItem('wc2026_derived_at', new Date().toISOString());
+      console.log(`[ADMIN] Fetched ${matches.length} matches, filled ${filled} new into matrix`);
     }
 
     setFdResult({ matches: matches.length, errors, method });
@@ -234,15 +254,17 @@ export default function AdminPage() {
   };
 
   const handleApplyDerivedResults = async () => {
-    if (!derivedResults) return;
+    // Derive final results from the full matrix (belt and suspenders)
+    const finalResults = deriveResultsFromMatrix();
     // Dispatch to React state (immediate standings update)
-    dispatch({ type: 'SET_RESULTS', payload: derivedResults });
-    // Explicitly persist to localStorage + Firebase (belt and suspenders)
-    await saveResults(derivedResults);
+    dispatch({ type: 'SET_RESULTS', payload: finalResults });
+    // Explicitly persist to localStorage + Firebase
+    await saveResults(finalResults);
     // Save timestamp for Standings page display
     localStorage.setItem('wc2026_derived_at', new Date().toISOString());
-    console.log('[ADMIN] Results saved explicitly:', Object.keys(derivedResults).length, 'teams');
-    setSyncStatus({ message: `APPLIED & SAVED RESULTS FOR ${derivedPreview?.teamsUpdated || 0} TEAMS`, type: 'success' });
+    const stats = getMatrixStats();
+    console.log('[ADMIN] Applied from matrix:', stats.scoredMatches, 'matches scored');
+    setSyncStatus({ message: `APPLIED FROM ${stats.scoredMatches} MATRIX MATCHES`, type: 'success' });
     setShowResultsPreview(false);
     setDerivedResults(null);
     setDerivedPreview(null);
@@ -260,60 +282,35 @@ export default function AdminPage() {
     setPastePreview(parsed);
   };
 
+  // ── MATCH MATRIX PASTE ──
+  // New architecture: all 104 matches are pre-defined. Pasting fills in slots.
+  // The matrix is cumulative — old scores persist, new scores fill empty slots.
+
   const handleApplyPastedScores = () => {
-    if (!pastePreview || pastePreview.length === 0) return;
+    if (!pasteText.trim()) return;
 
-    // Convert ScrapedMatch[] (full names) → Match[] (3-letter codes) for the results engine
-    // Deduplicate: keep only the LAST occurrence of each home+away pair (so re-pasting updates, not adds)
-    const matchMap = new Map<string, Match>();
-    for (const s of pastePreview) {
-      const homeCode = mapTeamCode(s.homeTeam);
-      const awayCode = mapTeamCode(s.awayTeam);
-      if (homeCode && awayCode) {
-        const key = `${homeCode}|${awayCode}`;
-        matchMap.set(key, {
-          id: Date.now() + Math.random(),
-          date: new Date().toISOString(),
-          homeTeam: homeCode,
-          awayTeam: awayCode,
-          homeGoals: s.homeGoals,
-          awayGoals: s.awayGoals,
-          status: 'FT',
-          round: 'Group Stage',
-          venue: 'TBD',
-        });
-      }
-    }
-    const convertedMatches = Array.from(matchMap.values());
+    // Parse pasted text and fill scores into the match matrix
+    const result = parsePastedScoresToMatrix(pasteText);
 
-    // Also merge into fixture cache for Training Ground display
-    const cached = localStorage.getItem('wc2026_fixtures');
-    if (cached) {
-      try {
-        const existing = JSON.parse(cached);
-        const merged = mergeScrapedResults(existing, pastePreview);
-        localStorage.setItem('wc2026_fixtures', JSON.stringify(merged));
-        localStorage.setItem('wc2026_data_source', 'firecrawl');
-        localStorage.setItem('wc2026_fixtures_last_fetch', Date.now().toString());
-      } catch { /* ignore cache merge errors */ }
-    }
+    // Derive results from the ENTIRE matrix (all scored matches ever)
+    const preview = generateResultsPreviewFromMatrix();
+    setDerivedResults(preview.results);
+    setDerivedPreview({
+      groupSummaries: preview.groupSummaries,
+      knockoutSummary: preview.knockoutSummary,
+      teamsUpdated: preview.teamsUpdated,
+    });
+    setShowResultsPreview(true);
 
-    // Derive results from the converted matches and show preview
-    if (convertedMatches.length > 0) {
-      const preview = generateResultsPreview(convertedMatches);
-      setDerivedResults(preview.results);
-      setDerivedPreview({
-        groupSummaries: preview.groupSummaries,
-        knockoutSummary: preview.knockoutSummary,
-        teamsUpdated: preview.teamsUpdated,
-      });
-      setShowResultsPreview(true);
-    }
-
-    setPastePreview(null);
+    setPastePreview([]); // Clear the legacy preview
     setPasteText('');
-    setSyncStatus({ message: `PARSED ${convertedMatches.length}/${pastePreview.length} SCORES — REVIEW PREVIEW BELOW`, type: 'success' });
-    setTimeout(() => setSyncStatus(null), 4000);
+
+    const stats = getMatrixStats();
+    const statusMsg = result.overwritten > 0
+      ? `ADDED ${result.matched.length - result.overwritten} NEW + UPDATED ${result.overwritten} | ${stats.scoredMatches}/${stats.totalMatches} TOTAL FILLED`
+      : `ADDED ${result.matched.length} NEW SCORES | ${stats.scoredMatches}/${stats.totalMatches} TOTAL FILLED`;
+    setSyncStatus({ message: statusMsg, type: 'success' });
+    setTimeout(() => setSyncStatus(null), 5000);
   };
 
   const handleSetTopScorerActual = async (name: string, country: string) => {
@@ -859,13 +856,29 @@ France 3-1 Senegal`}
               )}
             </div>
 
+            {/* Match Matrix Grid */}
+            <div className="retro-card p-4" style={{ borderColor: '#2D3192' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-pixel text-[10px] flex items-center gap-2" style={{ color: '#2D3192' }}>
+                  <Globe className="w-3 h-3" /> MATCH MATRIX
+                </h3>
+                <button onClick={() => setShowMatrixGrid(!showMatrixGrid)}
+                  className="pixel-btn small" style={{ backgroundColor: '#2D3192', borderColor: '#2D3192', color: '#FFD700' }}>
+                  {showMatrixGrid ? 'HIDE' : 'SHOW'} GRID
+                </button>
+              </div>
+
+              {/* Stats */}
+              <MatrixStatsBar />
+
+              {/* Grid */}
+              {showMatrixGrid && <MatchMatrixGrid />}
+            </div>
+
             {/* Info */}
             <div className="p-3" style={{ backgroundColor: 'rgba(45,49,146,0.1)', borderLeft: '4px solid #2D3192' }}>
               <p className="text-[10px]" style={{ color: '#8899AA' }}>
-                <strong style={{ color: '#E8E8E8' }}>How it works:</strong> The Results Engine reads match scores,
-                calculates group standings and knockout progress, then generates TournamentResults.
-                Click APPLY TO SCORING SYSTEM to update all manager scores.
-                FETCH requires a one-time proxy deploy. Paste Scores works immediately.
+                <strong style={{ color: '#E8E8E8' }}>How it works:</strong> All 104 World Cup 2026 matches are pre-loaded into the Match Matrix. When you paste scores, they fill in the matching slots. The matrix remembers every score you have ever entered. The Results Engine always reads from the full matrix, so standings are cumulative. Re-pasting the same score is a no-op.
               </p>
             </div>
           </div>
@@ -1064,4 +1077,110 @@ France 3-1 Senegal`}
       </div>
     </div>
    );
+}
+
+
+// ============================================================================
+// MATCH MATRIX GRID COMPONENTS
+// ============================================================================
+
+function MatrixStatsBar() {
+  const [stats, setStats] = useState(getMatrixStats());
+  useEffect(() => {
+    const interval = setInterval(() => setStats(getMatrixStats()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const pct = Math.round((stats.scoredMatches / stats.totalMatches) * 100);
+
+  return (
+    <div className="flex items-center gap-3 mb-2">
+      <div className="flex-1 h-2" style={{ backgroundColor: '#1A1A2E', border: '1px solid #0F3460' }}>
+        <div className="h-full transition-all" style={{
+          width: `${pct}%`,
+          backgroundColor: pct === 100 ? '#00AA00' : pct > 50 ? '#FFD700' : '#2D3192',
+        }} />
+      </div>
+      <span className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>
+        {stats.scoredMatches}/{stats.totalMatches} ({pct}%)
+      </span>
+    </div>
+  );
+}
+
+function MatchMatrixGrid() {
+  const [matrix, setMatrix] = useState<MatrixMatch[]>(getMatrix());
+
+  useEffect(() => {
+    const interval = setInterval(() => setMatrix(getMatrix()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Group by round
+  const groups: Record<string, MatrixMatch[]> = {};
+  for (const m of matrix) {
+    if (!groups[m.round]) groups[m.round] = [];
+    groups[m.round].push(m);
+  }
+
+  const roundOrder = [
+    'GROUP_A', 'GROUP_B', 'GROUP_C', 'GROUP_D',
+    'GROUP_E', 'GROUP_F', 'GROUP_G', 'GROUP_H',
+    'GROUP_I', 'GROUP_J', 'GROUP_K', 'GROUP_L',
+    'LAST_32', 'LAST_16', 'QUARTER_FINALS', 'SEMI_FINALS', 'THIRD_PLACE', 'FINAL',
+  ];
+
+  const roundLabel = (r: string) => {
+    if (r.startsWith('GROUP_')) return 'GROUP ' + r.replace('GROUP_', '');
+    if (r === 'LAST_32') return 'ROUND OF 32';
+    if (r === 'LAST_16') return 'ROUND OF 16';
+    if (r === 'QUARTER_FINALS') return 'QUARTER FINALS';
+    if (r === 'SEMI_FINALS') return 'SEMI FINALS';
+    if (r === 'THIRD_PLACE') return '3RD PLACE';
+    return r;
+  };
+
+  return (
+    <div className="space-y-3 max-h-96 overflow-y-auto mt-3">
+      {roundOrder.map(round => {
+        const matches = groups[round];
+        if (!matches || matches.length === 0) return null;
+        const scoredCount = matches.filter(m => m.homeGoals !== null).length;
+
+        return (
+          <div key={round}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-pixel text-[7px]" style={{ color: '#FFD700' }}>{roundLabel(round)}</span>
+              <span className="font-pixel text-[6px]" style={{ color: '#8899AA' }}>
+                {scoredCount}/{matches.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+              {matches.map(m => {
+                const isScored = m.homeGoals !== null;
+                const home = m.homeTeam === 'None' ? 'TBD' : m.homeTeam;
+                const away = m.awayTeam === 'None' ? 'TBD' : m.awayTeam;
+
+                return (
+                  <div key={m.id}
+                    className="px-2 py-1 flex items-center justify-between"
+                    style={{
+                      backgroundColor: isScored ? 'rgba(0,170,0,0.1)' : 'rgba(26,26,46,0.6)',
+                      border: `1px solid ${isScored ? '#00AA00' : '#0F3460'}`,
+                    }}>
+                    <span className="font-pixel text-[6px] truncate" style={{ color: isScored ? '#E8E8E8' : '#556677' }}>
+                      {home} vs {away}
+                    </span>
+                    <span className="font-pixel text-[7px] flex-shrink-0" style={{ color: isScored ? '#00AA00' : '#556677' }}>
+                      {isScored ? `${m.homeGoals}-${m.awayGoals}` : '—'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
