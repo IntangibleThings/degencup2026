@@ -10,9 +10,9 @@ const NAV_ITEMS = [
   { path: '/standings', label: 'STANDINGS', icon: null },
   { path: '/teams', label: 'TEAMS', icon: null },
   { path: '/fixtures', label: 'FIXTURES', icon: null },
+  { path: '/degen-den', label: 'DEN', icon: Flame },
   { path: '/training-ground', label: 'GROUND', icon: Crosshair },
   { path: '/rules', label: 'RULES', icon: null },
-  { path: '/degen-den', label: 'DEN', icon: Flame },
   { path: '/admin', label: 'ADMIN', icon: null },
 ];
 

@@ -3,14 +3,23 @@ import { GROUPS, TEAM_FLAGS, TEAM_NAMES, calculateTeamPoints } from '@/data/tour
 import type { GroupLetter } from '@/data/tournament';
 
 export default function TeamPointsPage() {
-  const { state } = useGame();
+  const { state, getScoreForManager } = useGame();
+
+  // Determine top 6 managers for highlighting
+  const topSixIds = new Set(
+    [...state.managers]
+      .map(m => ({ id: m.id, total: getScoreForManager(m.id).total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6)
+      .map(m => m.id)
+  );
 
   // Build a lookup: teamCode → managers who have this team
-  const teamOwners: Record<string, { name: string; teamName: string }[]> = {};
+  const teamOwners: Record<string, { name: string; teamName: string; isTopSix: boolean }[]> = {};
   for (const mgr of state.managers) {
     for (const code of mgr.teamCodes) {
       if (!teamOwners[code]) teamOwners[code] = [];
-      teamOwners[code].push({ name: mgr.name, teamName: mgr.teamName || mgr.name });
+      teamOwners[code].push({ name: mgr.name, teamName: mgr.teamName || mgr.name, isTopSix: topSixIds.has(mgr.id) });
     }
   }
 
@@ -94,17 +103,22 @@ export default function TeamPointsPage() {
                       {/* Owners */}
                       <div className="flex-shrink-0 flex flex-wrap gap-1 justify-end" style={{ minWidth: '80px' }}>
                         {owners.length === 0 && (
-                          <span className="font-pixel text-[6px]" style={{ color: '#556677' }}>—</span>
+                          <span className="font-pixel text-[8px]" style={{ color: '#556677' }}>—</span>
                         )}
                         {owners.slice(0, 3).map(o => (
-                          <span key={o.name} className="font-pixel text-[6px] px-1 py-0.5 truncate max-w-[60px]"
-                            style={{ backgroundColor: 'rgba(45,49,146,0.3)', color: '#E8E8E8', border: '1px solid #0F3460' }}
+                          <span key={o.name}
+                            className="font-pixel text-[8px] px-2 py-0.5 truncate max-w-[80px]"
+                            style={{
+                              backgroundColor: o.isTopSix ? 'rgba(0,170,0,0.15)' : 'rgba(45,49,146,0.3)',
+                              color: o.isTopSix ? '#00AA00' : '#E8E8E8',
+                              border: `1px solid ${o.isTopSix ? '#00AA00' : '#0F3460'}`,
+                            }}
                             title={o.teamName}>
                             {o.teamName}
                           </span>
                         ))}
                         {owners.length > 3 && (
-                          <span className="font-pixel text-[6px]" style={{ color: '#8899AA' }}>+{owners.length - 3}</span>
+                          <span className="font-pixel text-[8px]" style={{ color: '#8899AA' }}>+{owners.length - 3}</span>
                         )}
                       </div>
                     </div>

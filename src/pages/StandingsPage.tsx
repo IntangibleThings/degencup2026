@@ -68,24 +68,24 @@ export default function StandingsPage() {
 
         {/* Stats Bar */}
         <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="retro-card p-3 text-center" style={{ borderColor: '#FFD700' }}>
+          <div className="retro-card p-3 text-center flex flex-col justify-between" style={{ borderColor: '#FFD700' }}>
             <Users className="w-4 h-4 mx-auto mb-1" style={{ color: '#FFD700' }} />
-            <div className="font-pixel text-xl" style={{ color: '#FFD700' }}>{state.managers.length}</div>
-            <div className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>MANAGERS</div>
+            <div className="font-pixel text-xl leading-tight" style={{ color: '#FFD700' }}>{state.managers.length}</div>
+            <div className="font-pixel text-[7px] mt-1" style={{ color: '#8899AA' }}>MANAGERS</div>
           </div>
-          <div className="retro-card p-3 text-center" style={{ borderColor: '#2D3192' }}>
+          <div className="retro-card p-3 text-center flex flex-col justify-between" style={{ borderColor: '#2D3192' }}>
             <TrendingUp className="w-4 h-4 mx-auto mb-1" style={{ color: '#2D3192' }} />
-            <div className="font-pixel text-xl" style={{ color: '#E8E8E8' }}>
+            <div className="font-pixel text-xl leading-tight" style={{ color: '#E8E8E8' }}>
               {managerScores[0]?.total || 0}
             </div>
-            <div className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>LEADING</div>
+            <div className="font-pixel text-[7px] mt-1" style={{ color: '#8899AA' }}>LEADING</div>
           </div>
-          <div className="retro-card p-3 text-center" style={{ borderColor: '#00AA00' }}>
+          <div className="retro-card p-3 text-center flex flex-col justify-between" style={{ borderColor: '#00AA00' }}>
             <Trophy className="w-4 h-4 mx-auto mb-1" style={{ color: '#00AA00' }} />
-            <div className="font-pixel text-[9px] truncate px-1" style={{ color: '#00AA00' }}>
+            <div className="font-pixel text-xl leading-tight truncate px-1" style={{ color: '#00AA00' }}>
               {managerScores[0]?.teamName || managerScores[0]?.name || '---'}
             </div>
-            <div className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>TOP</div>
+            <div className="font-pixel text-[7px] mt-1" style={{ color: '#8899AA' }}>TOP</div>
           </div>
         </div>
 
@@ -136,11 +136,11 @@ export default function StandingsPage() {
                         {(mgr.teamName || mgr.name)[0].toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-pixel text-[9px] truncate" style={{ color: '#FFD700' }}>
+                        <div className="font-pixel text-[11px] truncate" style={{ color: '#FFD700' }}>
                           {mgr.teamName || mgr.name}
                         </div>
                         {mgr.realName && (
-                          <div className="font-pixel text-[6px] truncate" style={{ color: '#8899AA' }}>
+                          <div className="font-pixel text-[8px] truncate" style={{ color: '#8899AA' }}>
                             {mgr.realName}
                           </div>
                         )}
@@ -182,11 +182,11 @@ export default function StandingsPage() {
                         {(mgr.teamName || mgr.name)[0].toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <div className="font-pixel text-[9px] truncate" style={{ color: '#FFD700' }}>
+                        <div className="font-pixel text-[11px] truncate" style={{ color: '#FFD700' }}>
                           {mgr.teamName || mgr.name}
                         </div>
                         {mgr.realName && (
-                          <div className="font-pixel text-[6px] truncate" style={{ color: '#8899AA' }}>
+                          <div className="font-pixel text-[8px] truncate" style={{ color: '#8899AA' }}>
                             {mgr.realName}
                           </div>
                         )}
