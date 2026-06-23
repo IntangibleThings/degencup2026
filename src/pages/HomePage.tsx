@@ -205,16 +205,6 @@ export default function HomePage() {
           FANTASY WORLD CUP DRAFT
         </p>
 
-        {/* Confirmation Banner */}
-        <div className="retro-card p-4 w-full max-w-lg mb-6" style={{ borderColor: '#FFD700', borderLeftWidth: 6 }}>
-          <p className="font-pixel text-[9px] text-center leading-relaxed" style={{ color: '#FFD700' }}>
-            YOU HAVE 48 HOURS TO CONFIRM INTEREST IN PLAYING.
-          </p>
-          <p className="font-pixel text-[8px] text-center mt-2" style={{ color: '#E60012' }}>
-            FAIL TO CONFIRM = <strong>BOOTED</strong>. NO EXCEPTIONS.
-          </p>
-        </div>
-
         {/* MAIN CONTENT AREA */}
         <div className="w-full max-w-sm flex flex-col items-center gap-3 mb-6">
 

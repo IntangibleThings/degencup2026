@@ -15,6 +15,11 @@ import type { Match } from './fixtures';
 import type { TournamentResults } from './tournament';
 import { GROUPS as TOURNAMENT_GROUPS, TEAM_FLAGS } from './tournament';
 import { getScoredMatches } from './matchMatrix';
+import type { MatrixMatch } from './matchMatrix';
+
+// Generic match input — accepts both Match (fixtures) and MatrixMatch (football-data.org)
+// football-data.org uses status 'FINISHED' which is not in our Match type
+type ScoredMatch = Match | MatrixMatch;
 
 // Build group name → teams map from canonical tournament data
 const GROUPS: Record<string, string[]> = {};
@@ -37,7 +42,7 @@ interface GroupStanding {
 /**
  * Calculate group standings from match results.
  */
-function calculateGroupStandings(matches: Match[]): Map<string, GroupStanding[]> {
+function calculateGroupStandings(matches: ScoredMatch[]): Map<string, GroupStanding[]> {
   const tables = new Map<string, Map<string, GroupStanding>>();
 
   // Initialize all groups
@@ -51,7 +56,7 @@ function calculateGroupStandings(matches: Match[]): Map<string, GroupStanding[]>
 
   // Process finished matches
   for (const match of matches) {
-    if (match.status !== 'FT' && match.status !== 'AET' && match.status !== 'PEN') continue;
+    if (match.status !== 'FT' && match.status !== 'AET' && match.status !== 'PEN' && match.status !== 'FINISHED') continue;
     if (match.homeGoals === null || match.awayGoals === null) continue;
 
     // Find which group this match belongs to
@@ -126,7 +131,7 @@ export function deriveResultsFromMatrix(): TournamentResults {
  *   Group position points → reachedRoundOf16 points → QF → SF → Final → Winner
  *   Plus: 3rd place playoff winner gets bonus
  */
-export function deriveResultsFromMatches(matches: Match[]): TournamentResults {
+export function deriveResultsFromMatches(matches: ScoredMatch[]): TournamentResults {
   const results: TournamentResults = {};
   const standings = calculateGroupStandings(matches);
 
@@ -170,7 +175,7 @@ export function deriveResultsFromMatches(matches: Match[]): TournamentResults {
   // Scoring milestones: R16, QF, SF, Final, Winner, 3rd Place
 
   const finishedMatches = matches.filter(m =>
-    m.status === 'FT' || m.status === 'AET' || m.status === 'PEN'
+    m.status === 'FT' || m.status === 'AET' || m.status === 'PEN' || m.status === 'FINISHED'
   );
 
   for (const match of finishedMatches) {
@@ -258,7 +263,7 @@ export function generateResultsPreviewFromMatrix(): ReturnType<typeof generateRe
  * Generate a human-readable preview of what the results engine derived.
  * Shows group standings and knockout progress for admin review.
  */
-export function generateResultsPreview(matches: Match[]): {
+export function generateResultsPreview(matches: ScoredMatch[]): {
   results: TournamentResults;
   groupSummaries: { group: string; standings: { team: string; flag: string; pts: number; gd: number; pos: number }[] }[];
   knockoutSummary: { round: string; matches: string[] };
@@ -283,7 +288,7 @@ export function generateResultsPreview(matches: Match[]): {
   }
 
   // Build knockout summary
-  const finishedMatches = matches.filter(m => m.status === 'FT' || m.status === 'AET' || m.status === 'PEN');
+  const finishedMatches = matches.filter(m => m.status === 'FT' || m.status === 'AET' || m.status === 'PEN' || m.status === 'FINISHED');
   const koMatches = finishedMatches.filter(m => getKnockoutRound(m.round || '') !== null);
   const matchesByRound: Record<string, string[]> = {};
   for (const m of koMatches) {
@@ -315,7 +320,7 @@ export function generateResultsPreview(matches: Match[]): {
  * Call this after fetching match results from any source.
  * Returns the results for dispatching to GameContext via SET_RESULTS action.
  */
-export function applyMatchResultsToGame(matches: Match[]): {
+export function applyMatchResultsToGame(matches: ScoredMatch[]): {
   results: TournamentResults;
   updatedTeams: number;
 } {
