@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { getMatrix, getMatrixStats, type MatrixMatch } from '@/data/matchMatrix';
+import { TEAM_FLAGS } from '@/data/tournament';
 import { Calendar } from 'lucide-react';
 
 export default function FixturesPage() {
   const [matrix, setMatrix] = useState<MatrixMatch[]>(getMatrix());
   const [stats, setStats] = useState(getMatrixStats());
 
-  // Refresh every 2 seconds to catch updates from other tabs/admin
   useEffect(() => {
     const interval = setInterval(() => {
       setMatrix(getMatrix());
@@ -15,7 +15,6 @@ export default function FixturesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Group by round
   const groups: Record<string, MatrixMatch[]> = {};
   for (const m of matrix) {
     if (!groups[m.round]) groups[m.round] = [];
@@ -38,6 +37,8 @@ export default function FixturesPage() {
     if (r === 'THIRD_PLACE') return '3RD PLACE PLAYOFF';
     return r;
   };
+
+  const getFlag = (code: string) => TEAM_FLAGS[code] || '';
 
   const pct = Math.round((stats.scoredMatches / stats.totalMatches) * 100);
 
@@ -69,7 +70,7 @@ export default function FixturesPage() {
           </div>
         </div>
 
-        {/* Match Grid by Round */}
+        {/* Match Grid */}
         <div className="space-y-4">
           {roundOrder.map(round => {
             const matches = groups[round];
@@ -78,7 +79,6 @@ export default function FixturesPage() {
 
             return (
               <div key={round} className="retro-card p-3" style={{ borderColor: '#1A1A2E' }}>
-                {/* Round Header */}
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-pixel text-[9px]" style={{ color: '#FFD700' }}>
                     {roundLabel(round)}
@@ -88,40 +88,65 @@ export default function FixturesPage() {
                   </span>
                 </div>
 
-                {/* Match Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {matches.map(m => {
                     const isScored = m.homeGoals !== null;
-                    const home = m.homeTeam === 'None' ? 'TBD' : m.homeTeam;
-                    const away = m.awayTeam === 'None' ? 'TBD' : m.awayTeam;
+                    const homeCode = m.homeTeam === 'None' ? 'TBD' : m.homeTeam;
+                    const awayCode = m.awayTeam === 'None' ? 'TBD' : m.awayTeam;
                     const homeName = m.homeTeamName === 'None' ? 'TBD' : m.homeTeamName;
                     const awayName = m.awayTeamName === 'None' ? 'TBD' : m.awayTeamName;
 
+                    // Determine winner for highlighting
+                    let homeWon = false, awayWon = false, isDraw = false;
+                    if (isScored && m.homeGoals !== null && m.awayGoals !== null) {
+                      if (m.homeGoals > m.awayGoals) homeWon = true;
+                      else if (m.awayGoals > m.homeGoals) awayWon = true;
+                      else isDraw = true;
+                    }
+
                     return (
                       <div key={m.id}
-                        className="px-2 py-2 flex flex-col"
+                        className="px-3 py-3"
                         style={{
                           backgroundColor: isScored ? 'rgba(0,170,0,0.08)' : 'rgba(26,26,46,0.4)',
                           border: `1px solid ${isScored ? '#00AA00' : '#0F3460'}`,
                         }}>
-                        {/* Teams */}
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-pixel text-[7px] truncate flex-1" style={{ color: isScored ? '#E8E8E8' : '#556677' }}
-                            title={homeName}>
-                            {home}
+                        {/* Home Team */}
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-base flex-shrink-0">{getFlag(homeCode)}</span>
+                          <span className={`font-pixel text-[9px] truncate flex-1 ${homeWon ? 'font-bold' : ''}`}
+                            style={{ color: homeWon ? '#00AA00' : isScored ? '#E8E8E8' : '#556677' }}>
+                            {homeName}
                           </span>
-                          <span className="font-pixel text-[6px] mx-1" style={{ color: '#8899AA' }}>v</span>
-                          <span className="font-pixel text-[7px] truncate flex-1 text-right" style={{ color: isScored ? '#E8E8E8' : '#556677' }}
-                            title={awayName}>
-                            {away}
-                          </span>
+                          {isScored && (
+                            <span className={`font-pixel text-sm flex-shrink-0 ${homeWon ? 'font-bold' : ''}`}
+                              style={{ color: homeWon ? '#00AA00' : isDraw ? '#FFD700' : '#E8E8E8' }}>
+                              {m.homeGoals}
+                            </span>
+                          )}
                         </div>
-                        {/* Score */}
-                        <div className="text-center">
-                          <span className="font-pixel text-[10px]" style={{ color: isScored ? '#00AA00' : '#556677' }}>
-                            {isScored ? `${m.homeGoals} - ${m.awayGoals}` : '—'}
+
+                        {/* Away Team */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-base flex-shrink-0">{getFlag(awayCode)}</span>
+                          <span className={`font-pixel text-[9px] truncate flex-1 ${awayWon ? 'font-bold' : ''}`}
+                            style={{ color: awayWon ? '#00AA00' : isScored ? '#E8E8E8' : '#556677' }}>
+                            {awayName}
                           </span>
+                          {isScored && (
+                            <span className={`font-pixel text-sm flex-shrink-0 ${awayWon ? 'font-bold' : ''}`}
+                              style={{ color: awayWon ? '#00AA00' : isDraw ? '#FFD700' : '#E8E8E8' }}>
+                              {m.awayGoals}
+                            </span>
+                          )}
                         </div>
+
+                        {/* Score line centered when both visible */}
+                        {!isScored && (
+                          <div className="text-center mt-1">
+                            <span className="font-pixel text-[8px]" style={{ color: '#556677' }}>—</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

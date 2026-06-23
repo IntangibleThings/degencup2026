@@ -2,16 +2,14 @@ import { useState, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useGame } from '@/context/GameContext';
 import { getVersion } from '@/data/version';
-import { Menu, X, Trophy, Flame, Crosshair } from 'lucide-react';
+import { Menu, X, Trophy, Flame } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { path: '/tiers', label: 'TIERS', icon: null },
-  { path: '/draft', label: 'DRAFT', icon: null },
-  { path: '/standings', label: 'STANDINGS', icon: null },
-  { path: '/teams', label: 'TEAMS', icon: null },
   { path: '/fixtures', label: 'FIXTURES', icon: null },
+  { path: '/teams', label: 'TEAMS', icon: null },
+  { path: '/standings', label: 'STANDINGS', icon: null },
+  { path: '/tiers', label: 'TIERS', icon: null },
   { path: '/degen-den', label: 'DEN', icon: Flame },
-  { path: '/training-ground', label: 'GROUND', icon: Crosshair },
   { path: '/rules', label: 'RULES', icon: null },
   { path: '/admin', label: 'ADMIN', icon: null },
 ];

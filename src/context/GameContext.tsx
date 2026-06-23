@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, useState } from 'react';
 import type { Tier, AppSettings, Manager, TournamentResults, TopScorerGuess, Wager, WagerComment } from '@/data/tournament';
 import { SEED_WAGERS, SEED_COMMENTS } from '@/data/seedWagers';
+import { deriveResultsFromMatrix } from '@/data/resultsEngine';
 import { DEFAULT_SETTINGS, getAllTeams } from '@/data/tournament';
 import {
   isConfigured,
@@ -413,6 +414,27 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       dispatchRef.current({ type: 'SET_COMMENTS', payload: comments });
     });
 
+    // Auto-derive results from Match Matrix every 3 seconds
+    const matrixInterval = setInterval(() => {
+      try {
+        const derived = deriveResultsFromMatrix();
+        const derivedKeys = Object.keys(derived);
+        if (derivedKeys.length > 0) {
+          const hasChanges = derivedKeys.some(code => {
+            const cur = stateRef.current.results[code];
+            const der = derived[code];
+            return !cur || cur.groupPosition !== der.groupPosition || cur.eliminated !== der.eliminated;
+          });
+          if (hasChanges) {
+            console.log('[GAME] Auto-derived', derivedKeys.length, 'results from matrix');
+            dispatchRef.current({ type: 'SET_RESULTS', payload: derived });
+          }
+        }
+      } catch (err) {
+        console.error('[GAME] Matrix auto-derive failed:', err);
+      }
+    }, 3000);
+
     // Reload from cloud when tab becomes visible (user switches back to this tab)
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
@@ -439,7 +461,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
-    return () => { unsub(); unsubSettings(); unsubWagers(); unsubComments(); document.removeEventListener('visibilitychange', handleVisibility); };
+    return () => { unsub(); unsubSettings(); unsubWagers(); unsubComments(); clearInterval(matrixInterval); document.removeEventListener('visibilitychange', handleVisibility); };
   }, []);
 
   useEffect(() => { saveUserToLocal(state.currentUser); }, [state.currentUser]);
