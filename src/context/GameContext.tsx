@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, useState } from 'react';
 import type { Tier, AppSettings, Manager, TournamentResults, TopScorerGuess, Wager, WagerComment } from '@/data/tournament';
 import { SEED_WAGERS, SEED_COMMENTS } from '@/data/seedWagers';
+import { deriveResultsFromMatrix } from '@/data/resultsEngine';
 import { DEFAULT_SETTINGS, getAllTeams } from '@/data/tournament';
 import {
   isConfigured,
@@ -80,7 +81,9 @@ function saveStateToLocal(state: AppState) {
       wagers: state.wagers,
       comments: state.comments,
     };
+    const resultCount = Object.keys(toSave.results || {}).length;
     localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(toSave));
+    console.log('[LOCAL SAVE] Saved', resultCount, 'team results +', toSave.managers.length, 'managers');
   } catch (err) {
     console.error('[LOCAL SAVE] Failed:', err);
   }
@@ -307,21 +310,35 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     // Load from localStorage first (works even without Firebase)
     const localState = loadStateFromLocal();
     if (localState) {
-      console.log('[GAME] Loaded from localStorage:', localState.managers?.length || 0, 'managers');
+      const resultCount = Object.keys(localState.results || {}).length;
+      console.log('[GAME] Loaded from localStorage:', localState.managers?.length || 0, 'managers,', resultCount, 'team results');
       if (localState.managers && localState.managers.length > 0) {
         dispatch({ type: 'SET_MANAGERS', payload: localState.managers });
       }
       if (localState.settings) {
         dispatch({ type: 'SET_SETTINGS', payload: migrateSettings(localState.settings as unknown as Record<string, unknown>) });
       }
-      if (localState.results) {
-        dispatch({ type: 'SET_RESULTS', payload: localState.results as TournamentResults });
-      }
       if (localState.wagers && localState.wagers.length > 0) {
         dispatch({ type: 'SET_WAGERS', payload: localState.wagers as Wager[] });
       }
       if (localState.comments && localState.comments.length > 0) {
         dispatch({ type: 'SET_COMMENTS', payload: localState.comments as WagerComment[] });
+      }
+
+      // IMMEDIATELY derive results from Match Matrix — correct standings from first frame
+      try {
+        const derived = deriveResultsFromMatrix();
+        const derivedKeys = Object.keys(derived);
+        if (derivedKeys.length > 0) {
+          console.log('[GAME] Immediate matrix derive:', derivedKeys.length, 'teams');
+          dispatch({ type: 'SET_RESULTS', payload: derived });
+        } else if (localState.results && Object.keys(localState.results).length > 0) {
+          dispatch({ type: 'SET_RESULTS', payload: localState.results as TournamentResults });
+        }
+      } catch {
+        if (localState.results && Object.keys(localState.results).length > 0) {
+          dispatch({ type: 'SET_RESULTS', payload: localState.results as TournamentResults });
+        }
       }
     }
 
@@ -347,7 +364,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     loadSettingsAndResults()
       .then((data) => {
         if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-        if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+        // Only load cloud results if they have actual data (not empty {})
+        if (data?.results && Object.keys(data.results).length > 0) {
+          dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+        }
       })
       .catch(() => {});
 
@@ -377,7 +397,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     const unsubSettings = subscribeToSettingsAndResults((data) => {
       if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-      if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+      // Only overwrite results if cloud has actual data — preserves locally derived results
+      if (data?.results && Object.keys(data.results).length > 0) {
+        dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+      }
     });
 
     const unsubWagers = subscribeToWagers((cloudWagers) => {
@@ -391,6 +414,27 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       console.log('[GAME] Comments subscription:', comments.length);
       dispatchRef.current({ type: 'SET_COMMENTS', payload: comments });
     });
+
+    // Auto-derive results from Match Matrix every 3 seconds
+    const matrixInterval = setInterval(() => {
+      try {
+        const derived = deriveResultsFromMatrix();
+        const derivedKeys = Object.keys(derived);
+        if (derivedKeys.length > 0) {
+          const hasChanges = derivedKeys.some(code => {
+            const cur = stateRef.current.results[code];
+            const der = derived[code];
+            return !cur || cur.groupPosition !== der.groupPosition || cur.eliminated !== der.eliminated;
+          });
+          if (hasChanges) {
+            console.log('[GAME] Auto-derived', derivedKeys.length, 'results from matrix');
+            dispatchRef.current({ type: 'SET_RESULTS', payload: derived });
+          }
+        }
+      } catch (err) {
+        console.error('[GAME] Matrix auto-derive failed:', err);
+      }
+    }, 3000);
 
     // Reload from cloud when tab becomes visible (user switches back to this tab)
     const handleVisibility = () => {
@@ -418,7 +462,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
-    return () => { unsub(); unsubSettings(); unsubWagers(); unsubComments(); document.removeEventListener('visibilitychange', handleVisibility); };
+    return () => { unsub(); unsubSettings(); unsubWagers(); unsubComments(); clearInterval(matrixInterval); document.removeEventListener('visibilitychange', handleVisibility); };
   }, []);
 
   useEffect(() => { saveUserToLocal(state.currentUser); }, [state.currentUser]);
