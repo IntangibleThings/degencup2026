@@ -4,37 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/trophy-pixel.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Aggressive cache-busting for mobile browsers -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
     <title>Degen Cup 2026</title>
-    <!-- Version guard: force reload on new deployment to bust mobile cache -->
-    <script>
-      (function() {
-        var BUILD_KEY = 'dc_build_v90';
-        if (!localStorage.getItem(BUILD_KEY)) {
-          // First time seeing this build — clear any app caches and force reload
-          localStorage.setItem(BUILD_KEY, Date.now().toString());
-          // Clear old build markers (keep current)
-          for (var i = localStorage.length - 1; i >= 0; i--) {
-            var k = localStorage.key(i);
-            if (k && k.indexOf('dc_build_v') === 0 && k !== BUILD_KEY) {
-              localStorage.removeItem(k);
-            }
-          }
-          // Try to clear Cache API caches
-          if (typeof caches !== 'undefined') {
-            caches.keys().then(function(names) {
-              names.forEach(function(n) { caches.delete(n); });
-            }).catch(function(){});
-          }
-          // Hard reload to fetch fresh assets
-          console.log('[VERSION GUARD] New build v90 — forcing cache refresh');
-          window.location.reload(true);
-        }
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

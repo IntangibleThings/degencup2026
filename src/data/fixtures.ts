@@ -134,7 +134,6 @@ export async function fetchFixtures(): Promise<Match[]> {
     if (apiMatches.length > 0) {
       localStorage.setItem(FIXTURES_CACHE_KEY, JSON.stringify(apiMatches));
       localStorage.setItem(LAST_FETCH_KEY, Date.now().toString());
-      localStorage.setItem('wc2026_data_source', 'api');
       return apiMatches;
     }
   } catch (err) {
@@ -144,7 +143,7 @@ export async function fetchFixtures(): Promise<Match[]> {
   // 2. Try Firecrawl scraping (free tier at firecrawl.dev)
   try {
     const { scrapeScores } = await import('./firecrawl');
-    const { matches: scraped, errors } = await scrapeScores();
+    const { matches: scraped } = await scrapeScores();
     if (scraped.length > 0) {
       // Merge scraped scores into mock data
       const mockMatches = generateMockFixtures();
@@ -152,8 +151,6 @@ export async function fetchFixtures(): Promise<Match[]> {
       const merged = mergeScrapedResults(mockMatches, scraped);
       localStorage.setItem(FIXTURES_CACHE_KEY, JSON.stringify(merged));
       localStorage.setItem(LAST_FETCH_KEY, Date.now().toString());
-      localStorage.setItem('wc2026_data_source', 'firecrawl');
-      console.log(`[Fixtures] Firecrawl: merged ${scraped.length} results, errors: ${errors.length}`);
       return merged;
     }
   } catch (err) {
@@ -161,7 +158,6 @@ export async function fetchFixtures(): Promise<Match[]> {
   }
 
   // 3. Fall back to mock data
-  localStorage.setItem('wc2026_data_source', 'mock');
   const mockMatches = generateMockFixtures();
   localStorage.setItem(FIXTURES_CACHE_KEY, JSON.stringify(mockMatches));
   localStorage.setItem(LAST_FETCH_KEY, Date.now().toString());

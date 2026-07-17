@@ -16,9 +16,12 @@ export default function DraftPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [topScorerName, setTopScorerName] = useState('');
   const [topScorerCountry, setTopScorerCountry] = useState('');
+  const [topScorerEditMode, setTopScorerEditMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Top scorer pick: once submitted, it's locked. Can only add if missing.
+  // Amendment deadline: 1 hour before kickoff = June 11, 2026 14:00 ET
+  const AMEND_DEADLINE = new Date('2026-06-11T14:00:00-04:00').getTime();
+  const canAmend = Date.now() < AMEND_DEADLINE;
 
   const allTeams = useMemo(() => getAllTeams(state.settings.tiers), [state.settings.tiers]);
   const usedTeams = useMemo(() => {
@@ -69,7 +72,7 @@ export default function DraftPage() {
 
   const handleStartEdit = () => {
     if (state.settings.draftLocked) return;
-    if (!currentManager) return;
+    if (!canAmend || !currentManager) return;
     setSelected([...currentManager.teamCodes]);
     setIsEditing(true);
   };
@@ -151,14 +154,15 @@ export default function DraftPage() {
               CORRECT GUESS = +{state.settings.scoring.topScorerBonus} BONUS POINTS<br />
               Based on the FIFA Golden Boot winner (most goals in the tournament)
             </p>
-            {hasTopScorerGuess ? (
+            {hasTopScorerGuess && !topScorerEditMode ? (
               <div className="text-center">
                 <div className="font-pixel text-sm mb-1" style={{ color: '#00AA00' }}>✓ LOCKED IN</div>
                 <div className="font-pixel text-[10px]" style={{ color: '#E8E8E8' }}>{currentManager!.topScorerGuess!.name}</div>
                 <div className="font-pixel text-[8px]" style={{ color: '#8899AA' }}>({currentManager!.topScorerGuess!.country})</div>
-                <div className="font-pixel text-[7px] mt-2 px-2 py-1 inline-block" style={{ backgroundColor: 'rgba(230,0,18,0.1)', color: '#E60012', border: '1px solid #E60012' }}>
-                  NO CHANGES ALLOWED
-                </div>
+                {canAmend && (
+                  <button onClick={() => { setTopScorerEditMode(true); setTopScorerName(currentManager!.topScorerGuess!.name); setTopScorerCountry(currentManager!.topScorerGuess!.country); }}
+                    className="font-pixel text-[8px] mt-3 px-3 py-1" style={{ backgroundColor: '#2D3192', color: '#FFD700' }}>EDIT PICK</button>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -166,24 +170,33 @@ export default function DraftPage() {
                   placeholder="PLAYER NAME (e.g. Kylian Mbappe)" className="pixel-input w-full text-[10px] text-left" />
                 <input type="text" value={topScorerCountry} onChange={e => setTopScorerCountry(e.target.value)}
                   placeholder="COUNTRY (e.g. France)" className="pixel-input w-full text-[10px] text-left" />
-                <button onClick={handleSubmitTopScorer}
-                  disabled={!topScorerName.trim() || !topScorerCountry.trim()}
-                  className="pixel-btn gold w-full">SUBMIT TOP SCORER PICK</button>
+                <div className="flex gap-2">
+                  <button onClick={handleSubmitTopScorer}
+                    disabled={!topScorerName.trim() || !topScorerCountry.trim()}
+                    className="pixel-btn gold flex-1">{hasTopScorerGuess ? 'UPDATE PICK' : 'SUBMIT TOP SCORER PICK'}</button>
+                  {hasTopScorerGuess && (
+                    <button onClick={() => setTopScorerEditMode(false)} className="pixel-btn red small">CANCEL</button>
+                  )}
+                </div>
               </div>
             )}
           </div>
           <div className="flex flex-col items-center gap-3 mt-6">
             {state.settings.draftLocked ? (
               <p className="font-pixel text-[8px]" style={{ color: '#E60012' }}>
-                DRAFT LOCKED — NO EDITING
+                DRAFT LOCKED BY ADMIN — NO EDITING
               </p>
-            ) : (
+            ) : canAmend ? (
               <>
                 <button onClick={handleStartEdit} className="pixel-btn gold">EDIT ROSTER</button>
                 <p className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>
-                  ROSTER EDITING OPEN — LOCK COMING SOON
+                  EDITING CLOSES 1 HOUR BEFORE KICKOFF
                 </p>
               </>
+            ) : (
+              <p className="font-pixel text-[8px]" style={{ color: '#E60012' }}>
+                EDITING CLOSED — LESS THAN 1 HOUR TO KICKOFF
+              </p>
             )}
             <button onClick={() => navigate('/standings')} className="pixel-btn small">VIEW STANDINGS</button>
           </div>

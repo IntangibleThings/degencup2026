@@ -13,8 +13,6 @@ import PayoutPage from '@/pages/PayoutPage';
 import TestPage from '@/pages/TestPage';
 import DegenDenPage from '@/pages/DegenDenPage';
 import TrainingGroundPage from '@/pages/TrainingGroundPage';
-import TeamPointsPage from '@/pages/TeamPointsPage';
-import FixturesPage from '@/pages/FixturesPage';
 
 function App() {
   return (
@@ -34,8 +32,6 @@ function App() {
             <Route path="/test" element={<TestPage />} />
             <Route path="/degen-den" element={<DegenDenPage />} />
             <Route path="/training-ground" element={<TrainingGroundPage />} />
-            <Route path="/teams" element={<TeamPointsPage />} />
-            <Route path="/fixtures" element={<FixturesPage />} />
           </Routes>
         </main>
         <Footer />

@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '@/context/GameContext';
-import { Lock, CalendarDays, Trophy, ChevronDown, ChevronUp, ChevronLeft, X, Clock, Swords, Activity, TrendingUp, User, RefreshCw, Globe } from 'lucide-react';
+import { Lock, CalendarDays, Trophy, ChevronDown, ChevronUp, ChevronLeft, X, Clock, Swords, Activity, TrendingUp, User } from 'lucide-react';
 import type { Match } from '@/data/fixtures';
 import {
   fetchFixtures, getNext5Days, getPreviousGames,
   formatMatchTime, formatMatchDate, getGroupStandings,
   TEAM_FLAGS, TEAM_NAMES, WC2026_GROUPS,
 } from '@/data/fixtures';
-import { refreshScoresFromScrape, getDataSourceLabel, getLastScrape } from '@/data/firecrawl';
 
 const TG_PASSWORD = 'Dansucks123!';
 const C = {
@@ -272,10 +271,6 @@ export default function TrainingGroundPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [newsIndex, setNewsIndex] = useState(0);
-  const [dataSource, setDataSource] = useState(getDataSourceLabel());
-  const [lastScraped, setLastScraped] = useState(getLastScrape());
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshMsg, setRefreshMsg] = useState('');
 
   // News ticker items (simulated)
   const newsItems = [
@@ -295,8 +290,6 @@ export default function TrainingGroundPage() {
     setLoading(true);
     fetchFixtures().then(data => {
       setMatches(data);
-      setDataSource(getDataSourceLabel());
-      setLastScraped(getLastScrape());
       setLoading(false);
     });
   }, [entered]);
@@ -306,26 +299,6 @@ export default function TrainingGroundPage() {
     const iv = setInterval(() => setNewsIndex(i => (i + 1) % newsItems.length), 4000);
     return () => clearInterval(iv);
   }, [newsItems.length]);
-
-  const handleRefreshScores = useCallback(async () => {
-    setIsRefreshing(true);
-    setRefreshMsg('');
-    const result = await refreshScoresFromScrape();
-    setIsRefreshing(false);
-    if (result.updated > 0) {
-      setRefreshMsg(`${result.updated} scores updated`);
-      setDataSource(getDataSourceLabel());
-      setLastScraped(getLastScrape());
-      // Reload fixtures
-      const fresh = await fetchFixtures();
-      setMatches(fresh);
-    } else if (result.errors.length > 0) {
-      setRefreshMsg('No new scores found');
-    } else {
-      setRefreshMsg('Already up to date');
-    }
-    setTimeout(() => setRefreshMsg(''), 3000);
-  }, []);
 
   const handlePassword = useCallback(() => {
     if (password === TG_PASSWORD) {
@@ -393,38 +366,6 @@ export default function TrainingGroundPage() {
               <span className="font-pixel text-[8px]" style={{ color: '#FFD700' }}>LOGGED IN: {currentManager.name}</span>
             </div>
           )}
-          {/* Data source + refresh */}
-          <div className="mt-3 flex items-center justify-center gap-3 flex-wrap">
-            <span className="font-pixel text-[7px] px-2 py-1 flex items-center gap-1" style={{
-              background: dataSource === 'LIVE API' ? 'rgba(0,255,136,0.1)' : dataSource === 'FIRECRAWL' ? 'rgba(255,107,53,0.1)' : 'rgba(100,100,100,0.15)',
-              color: dataSource === 'LIVE API' ? '#00ff88' : dataSource === 'FIRECRAWL' ? '#FF6B35' : '#777',
-              border: `1px solid ${dataSource === 'LIVE API' ? '#00ff88' : dataSource === 'FIRECRAWL' ? '#FF6B35' : '#444'}`,
-            }}>
-              <Globe className="w-3 h-3" />
-              SOURCE: {dataSource}
-            </span>
-            {lastScraped && (
-              <span className="font-pixel text-[6px]" style={{ color: C.dim }}>
-                LAST UPDATE: {new Date(lastScraped).toLocaleString()}
-              </span>
-            )}
-            <button onClick={handleRefreshScores} disabled={isRefreshing}
-              className="font-pixel text-[7px] px-2 py-1 flex items-center gap-1 transition-all"
-              style={{
-                background: isRefreshing ? '#333' : 'rgba(255,107,53,0.15)',
-                color: isRefreshing ? '#666' : '#FF6B35',
-                border: `1px solid ${isRefreshing ? '#444' : '#FF6B35'}`,
-                cursor: isRefreshing ? 'wait' : 'pointer',
-              }}>
-              <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-              {isRefreshing ? 'SCRAPING...' : 'REFRESH SCORES'}
-            </button>
-            {refreshMsg && (
-              <span className="font-pixel text-[7px] px-2 py-0.5" style={{ background: 'rgba(0,170,0,0.15)', color: '#00AA00' }}>
-                {refreshMsg}
-              </span>
-            )}
-          </div>
         </div>
 
         {/* Quick stats */}

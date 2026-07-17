@@ -1,10 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, useState } from 'react';
 import type { Tier, AppSettings, Manager, TournamentResults, TopScorerGuess, Wager, WagerComment } from '@/data/tournament';
 import { SEED_WAGERS, SEED_COMMENTS } from '@/data/seedWagers';
-import { deriveResultsFromMatrix } from '@/data/resultsEngine';
-import { VERSION } from '@/data/version';
-import { getMatrix } from '@/data/matchMatrix';
-import type { MatrixMatch } from '@/data/matchMatrix';
 import { DEFAULT_SETTINGS, getAllTeams } from '@/data/tournament';
 import {
   isConfigured,
@@ -77,12 +73,10 @@ const LOCAL_STATE_KEY = 'vibecup_state_backup';
 
 function saveStateToLocal(state: AppState) {
   try {
-    // CRITICAL: Do NOT save 'results' to localStorage.
-    // Results are always derived from the Match Matrix (single source of truth).
-    // Saving derived results creates a stale cache that overwrites correct data.
     const toSave = {
       managers: state.managers,
       settings: state.settings,
+      results: state.results,
       wagers: state.wagers,
       comments: state.comments,
     };
@@ -303,25 +297,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   // INITIAL LOAD + SUBSCRIPTION ONLY (NO POLLING - prevents quota exhaustion)
   // ========================================================================
   useEffect(() => {
-    console.log('[GAME] === MOUNT ===', VERSION);
+    console.log('[GAME] === MOUNT ===');
 
     const savedUser = loadUserFromLocal();
     if (savedUser) {
       dispatch({ type: 'SET_USER', payload: savedUser });
     }
-
-    // Clear stale 'results' from localStorage if present (pre-v91 bug)
-    try {
-      const raw = localStorage.getItem(LOCAL_STATE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed.results && Object.keys(parsed.results).length > 0) {
-          console.log('[GAME] Clearing stale results from localStorage');
-          delete parsed.results;
-          localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(parsed));
-        }
-      }
-    } catch { /* ignore */ }
 
     // Load from localStorage first (works even without Firebase)
     const localState = loadStateFromLocal();
@@ -333,33 +314,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (localState.settings) {
         dispatch({ type: 'SET_SETTINGS', payload: migrateSettings(localState.settings as unknown as Record<string, unknown>) });
       }
+      if (localState.results) {
+        dispatch({ type: 'SET_RESULTS', payload: localState.results as TournamentResults });
+      }
       if (localState.wagers && localState.wagers.length > 0) {
         dispatch({ type: 'SET_WAGERS', payload: localState.wagers as Wager[] });
       }
       if (localState.comments && localState.comments.length > 0) {
         dispatch({ type: 'SET_COMMENTS', payload: localState.comments as WagerComment[] });
-      }
-
-      // IMMEDIATELY derive results from Match Matrix — correct standings from first frame
-      try {
-        const scoredCount = getMatrix().filter((m: MatrixMatch) => m.homeGoals !== null).length;
-        console.log('[GAME] Matrix has', scoredCount, 'scored matches');
-        const derived = deriveResultsFromMatrix();
-        const derivedKeys = Object.keys(derived);
-        console.log('[GAME] Derived results for', derivedKeys.length, 'teams');
-        if (derivedKeys.length > 0) {
-          console.log('[GAME] DISPATCH #1: SET_RESULTS from matrix derive (' + derivedKeys.length + ' teams)');
-          dispatch({ type: 'SET_RESULTS', payload: derived });
-        } else if (localState.results && Object.keys(localState.results).length > 0) {
-          console.log('[GAME] DISPATCH #2: SET_RESULTS from localState fallback');
-          dispatch({ type: 'SET_RESULTS', payload: localState.results as TournamentResults });
-        }
-      } catch (e) {
-        console.error('[GAME] Matrix derive failed:', e);
-        if (localState.results && Object.keys(localState.results).length > 0) {
-          console.log('[GAME] DISPATCH #3: SET_RESULTS from catch fallback');
-          dispatch({ type: 'SET_RESULTS', payload: localState.results as TournamentResults });
-        }
       }
     }
 
@@ -385,9 +347,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     loadSettingsAndResults()
       .then((data) => {
         if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-        // NOTE: We intentionally do NOT load 'results' from Firebase.
-        // Results are always derived from the Match Matrix (single source of truth).
-        // Loading stale Firebase results would overwrite correct matrix-derived data.
+        if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
       })
       .catch(() => {});
 
@@ -417,9 +377,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     const unsubSettings = subscribeToSettingsAndResults((data) => {
       if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-      // NOTE: We intentionally do NOT overwrite 'results' from Firebase subscription.
-      // Results are always derived from the Match Matrix (single source of truth).
-      // Firebase 'results' are a stale cache that would overwrite correct data.
+      if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
     });
 
     const unsubWagers = subscribeToWagers((cloudWagers) => {
@@ -434,34 +392,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       dispatchRef.current({ type: 'SET_COMMENTS', payload: comments });
     });
 
-    // Auto-derive results from Match Matrix every 3 seconds
-    const matrixInterval = setInterval(() => {
-      try {
-        const derived = deriveResultsFromMatrix();
-        const derivedKeys = Object.keys(derived);
-        if (derivedKeys.length > 0) {
-          const hasChanges = derivedKeys.some(code => {
-            const cur = stateRef.current.results[code];
-            const next = derived[code];
-            return !cur || cur.groupPosition !== next.groupPosition || cur.eliminated !== next.eliminated ||
-              cur.reachedKnockout !== next.reachedKnockout || cur.reachedRoundOf16 !== next.reachedRoundOf16 ||
-              cur.reachedQuarterFinal !== next.reachedQuarterFinal || cur.reachedSemiFinal !== next.reachedSemiFinal ||
-              cur.reachedFinal !== next.reachedFinal || cur.wonWorldCup !== next.wonWorldCup || cur.wonThirdPlace !== next.wonThirdPlace;
-          });
-          if (hasChanges) {
-            console.log('[GAME] DISPATCH #4: Auto-derive detected changes, updating', derivedKeys.length, 'teams');
-            dispatchRef.current({ type: 'SET_RESULTS', payload: derived });
-          }
-        }
-      } catch (err) {
-        console.error('[GAME] Matrix auto-derive failed:', err);
-      }
-    }, 3000);
-
     // Reload from cloud when tab becomes visible (user switches back to this tab)
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        console.log('[GAME] Tab became visible');
+        console.log('[GAME] Tab visible, reloading from cloud');
         loadAllManagers()
           .then((cloudManagers) => {
             const managers = cloudManagers as unknown as Manager[];
@@ -484,7 +418,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
-    return () => { unsub(); unsubSettings(); unsubWagers(); unsubComments(); clearInterval(matrixInterval); document.removeEventListener('visibilitychange', handleVisibility); };
+    return () => { unsub(); unsubSettings(); unsubWagers(); unsubComments(); document.removeEventListener('visibilitychange', handleVisibility); };
   }, []);
 
   useEffect(() => { saveUserToLocal(state.currentUser); }, [state.currentUser]);
@@ -590,18 +524,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       dispatchRef.current({ type: 'SET_MANAGERS', payload: managers });
       const data = await loadSettingsAndResults();
       if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-      // NOTE: Do NOT load results from Firebase. Results are always derived
-      // from the Match Matrix (single source of truth).
+      if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
       return managers.length;
     } catch (err) { console.error('[GAME] Load failed:', err); return 0; }
   }, []);
 
   const forceSync = useCallback(async () => {
     if (!isConfigured()) return;
-    // NOTE: Only sync managers and settings to Firebase. Results are derived
-    // from the Match Matrix and should never be stored in Firebase.
-    await syncAllToCloud(state.managers as unknown as Record<string, unknown>[], state.settings, null);
-  }, [state.managers, state.settings]);
+    await syncAllToCloud(state.managers as unknown as Record<string, unknown>[], state.settings, state.results);
+  }, [state.managers, state.settings, state.results]);
 
   const saveSettings = useCallback(async (settings: AppSettings) => {
     dispatch({ type: 'SET_SETTINGS', payload: settings });
@@ -616,10 +547,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const saveResults = useCallback(async (results: TournamentResults) => {
     dispatch({ type: 'SET_RESULTS', payload: results });
-    // NOTE: We do NOT save results to Firebase. Results are always derived
-    // from the Match Matrix (single source of truth). Saving derived data
-    // to Firebase creates a stale cache that overwrites correct data on load.
-    // The Match Matrix in localStorage is the only persistence needed.
+    if (isConfigured()) {
+      try {
+        const { saveResults: cloudSaveResults } = await import('@/lib/firebase');
+        await cloudSaveResults(results);
+        console.log('[CLOUD] Results saved');
+      } catch (err) { console.error('[CLOUD] Results save failed:', err); }
+    }
   }, []);
 
   // Degen Den wager implementations — Beer Mug Wager Flow
