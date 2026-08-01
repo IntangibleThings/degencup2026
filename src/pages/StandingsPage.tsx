@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '@/context/GameContext';
-import { Trophy, Users, TrendingUp } from 'lucide-react';
+import { Trophy, Users, TrendingUp, Clock } from 'lucide-react';
 
 export default function StandingsPage() {
   const navigate = useNavigate();
   const { state, getTeamsForManager, getScoreForManager } = useGame();
-  // Calculate scores for all managers
+
   const managerScores = useMemo(() => {
     return state.managers.map(m => {
       const score = getScoreForManager(m.id);
@@ -21,55 +21,91 @@ export default function StandingsPage() {
     });
   }, [state.managers, state.results, state.settings, getScoreForManager]);
 
+  const rankColor = (idx: number) => {
+    if (idx === 0) return '#FFD700';
+    if (idx === 1) return '#C0C0C0';
+    if (idx === 2) return '#CD7F32';
+    return '#8899AA';
+  };
+
+  // Get last updated timestamp in HKT
+  const getLastUpdated = (): string => {
+    try {
+      const raw = localStorage.getItem('wc2026_derived_at') || localStorage.getItem('wc2026_fixtures_last_fetch');
+      if (!raw || raw === 'null') return 'Not yet updated';
+      // Handle both ISO strings and numeric timestamps
+      const timestamp = /^\d+$/.test(raw) ? parseInt(raw, 10) : raw;
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return 'Not yet updated';
+      return date.toLocaleString('en-HK', {
+        timeZone: 'Asia/Hong_Kong',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }) + ' HKT';
+    } catch {
+      return 'Not yet updated';
+    }
+  };
 
   return (
     <div className="min-h-screen px-4 py-6">
       <div className="max-w-4xl mx-auto">
-        <h1 className="font-pixel text-lg md:text-2xl mb-2" style={{ color: '#FFD700' }}>LIVE STANDINGS</h1>
-        <p className="font-pixel text-[8px] mb-6" style={{ color: '#8899AA' }}>
-          MANAGERS RANKED BY TOTAL POINTS · UPDATES AFTER EACH MATCH
+        {/* Header */}
+        <h1 className="font-pixel text-lg md:text-2xl mb-1" style={{ color: '#FFD700' }}>STANDINGS</h1>
+        <p className="font-pixel text-[8px] mb-2" style={{ color: '#8899AA' }}>
+          MANAGERS RANKED BY TOTAL POINTS
         </p>
+        <div className="flex items-center gap-1 mb-5">
+          <Clock className="w-3 h-3" style={{ color: '#00c8ff' }} />
+          <span className="font-pixel text-[7px]" style={{ color: '#00c8ff' }}>
+            LAST UPDATED: {getLastUpdated()}
+          </span>
+        </div>
 
         {/* Stats Bar */}
         <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="retro-card p-3 text-center" style={{ borderColor: '#FFD700' }}>
+          <div className="retro-card p-3 text-center flex flex-col justify-between" style={{ borderColor: '#FFD700' }}>
             <Users className="w-4 h-4 mx-auto mb-1" style={{ color: '#FFD700' }} />
-            <div className="font-pixel text-lg" style={{ color: '#FFD700' }}>{state.managers.length}</div>
-            <div className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>MANAGERS</div>
+            <div className="font-pixel text-xl leading-tight" style={{ color: '#FFD700' }}>{state.managers.length}</div>
+            <div className="font-pixel text-[7px] mt-1" style={{ color: '#8899AA' }}>MANAGERS</div>
           </div>
-          <div className="retro-card p-3 text-center" style={{ borderColor: '#2D3192' }}>
+          <div className="retro-card p-3 text-center flex flex-col justify-between" style={{ borderColor: '#2D3192' }}>
             <TrendingUp className="w-4 h-4 mx-auto mb-1" style={{ color: '#2D3192' }} />
-            <div className="font-pixel text-lg" style={{ color: '#E8E8E8' }}>
+            <div className="font-pixel text-xl leading-tight" style={{ color: '#E8E8E8' }}>
               {managerScores[0]?.total || 0}
             </div>
-            <div className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>LEADING</div>
+            <div className="font-pixel text-[7px] mt-1" style={{ color: '#8899AA' }}>LEADING</div>
           </div>
-          <div className="retro-card p-3 text-center" style={{ borderColor: '#00AA00' }}>
+          <div className="retro-card p-3 text-center flex flex-col justify-between" style={{ borderColor: '#00AA00' }}>
             <Trophy className="w-4 h-4 mx-auto mb-1" style={{ color: '#00AA00' }} />
-            <div className="font-pixel text-[9px] md:text-sm truncate max-w-full" style={{ color: '#00AA00' }}>
-              {managerScores[0]?.name || '---'}
+            <div className="font-pixel text-xl leading-tight truncate px-1" style={{ color: '#00AA00' }}>
+              {managerScores[0]?.teamName || managerScores[0]?.name || '---'}
             </div>
-            <div className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>TOP</div>
+            <div className="font-pixel text-[7px] mt-1" style={{ color: '#8899AA' }}>TOP</div>
           </div>
         </div>
 
-        {/* Leaderboard Table */}
+        {/* Leaderboard */}
         {managerScores.length === 0 ? (
           <div className="retro-card p-8 text-center">
             <p className="font-pixel text-[10px]" style={{ color: '#8899AA' }}>NO MANAGERS YET</p>
             <button onClick={() => navigate('/draft')} className="pixel-btn gold mt-4">JOIN DRAFT</button>
           </div>
         ) : (
-          <div className="retro-card p-0 overflow-hidden">
-            {/* Header */}
-            <div className="grid grid-cols-12 gap-1 px-3 py-2 font-pixel text-[7px]" style={{ backgroundColor: 'rgba(45,49,146,0.3)', color: '#8899AA' }}>
+          <div className="space-y-2">
+            {/* Desktop Header */}
+            <div className="hidden md:grid md:grid-cols-12 md:gap-2 px-4 py-2 font-pixel text-[7px]" style={{ color: '#8899AA' }}>
               <div className="col-span-1">#</div>
-              <div className="col-span-3">MANAGER</div>
+              <div className="col-span-5">MANAGER</div>
               <div className="col-span-2 text-center">POINTS</div>
               <div className="col-span-1 text-center">ALIVE</div>
               <div className="col-span-1 text-center">SF</div>
               <div className="col-span-1 text-center">F</div>
-              <div className="col-span-3 text-center">TOP TEAM</div>
+              <div className="col-span-1 text-center">BEST</div>
             </div>
 
             {managerScores.map((mgr, idx) => {
@@ -80,46 +116,105 @@ export default function StandingsPage() {
               return (
                 <div key={mgr.id}
                   onClick={() => navigate(`/manager/${mgr.name}`)}
-                  className="grid grid-cols-12 gap-1 px-3 py-2 items-center cursor-pointer transition-colors"
+                  className="cursor-pointer transition-colors"
                   style={{
-                    borderBottom: '1px solid #1A1A2E',
-                    backgroundColor: isCurrent ? 'rgba(15,52,96,0.5)' : 'transparent',
-                    borderLeft: isCurrent ? '4px solid #FFD700' : '4px solid transparent',
+                    padding: '12px',
+                    backgroundColor: isCurrent ? 'rgba(15,52,96,0.4)' : 'rgba(10,10,20,0.6)',
+                    border: isCurrent ? '1px solid #FFD700' : '1px solid #1A1A2E',
+                    borderLeftWidth: isCurrent ? '4px' : '1px',
+                    borderLeftColor: isCurrent ? '#FFD700' : '#1A1A2E',
                   }}>
-                  <div className="col-span-1 font-pixel text-[10px]" style={{ color: idx === 0 ? '#FFD700' : idx === 1 ? '#C0C0C0' : idx === 2 ? '#CD7F32' : '#8899AA' }}>
-                    {idx + 1}
-                  </div>
-                  <div className="col-span-3 flex items-center gap-2">
-                    <div className="w-6 h-6 flex items-center justify-center font-pixel text-[8px]" style={{ backgroundColor: '#2D3192', color: '#FFD700' }}>
-                      {(mgr.teamName || mgr.name)[0]}
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="font-pixel text-[8px] truncate" style={{ color: '#FFD700' }}>{mgr.teamName || mgr.name}</span>
-                      {mgr.realName && <span className="font-pixel text-[6px]" style={{ color: '#8899AA' }}>{mgr.realName}</span>}
-                    </div>
-                  </div>
-                  <div className="col-span-2 text-center">
-                    <span className="font-pixel text-sm" style={{ color: '#FFD700' }}>{mgr.total}</span>
-                    {mgr.topScorerCorrect && (
-                      <span className="font-pixel text-[6px] ml-1 px-1" style={{ backgroundColor: '#FFD700', color: '#1A1A2E' }}>+5</span>
-                    )}
-                  </div>
-                  <div className="col-span-1 text-center font-pixel text-[9px]" style={{ color: mgr.teamsAlive > 0 ? '#00AA00' : '#E60012' }}>
-                    {mgr.teamsAlive}
-                  </div>
-                  <div className="col-span-1 text-center font-pixel text-[9px]" style={{ color: '#E8E8E8' }}>
-                    {mgr.semiFinalists}
-                  </div>
-                  <div className="col-span-1 text-center font-pixel text-[9px]" style={{ color: mgr.finalists > 0 ? '#FFD700' : '#8899AA' }}>
-                    {mgr.finalists}
-                  </div>
-                  <div className="col-span-3 text-center">
-                    {topTeam && (
-                      <div className="flex items-center justify-center gap-1">
-                        <span className="text-sm">{topTeam.flag}</span>
-                        <span className="font-pixel text-[7px]" style={{ color: '#FFD700' }}>+{topTeam.points}</span>
+                  {/* Mobile Layout */}
+                  <div className="md:hidden">
+                    {/* Top Row: Rank + Name + Points */}
+                    <div className="flex items-center gap-2">
+                      <span className="font-pixel text-[10px] w-5 flex-shrink-0 text-center" style={{ color: rankColor(idx) }}>
+                        {idx + 1}
+                      </span>
+                      <div className="w-7 h-7 flex-shrink-0 flex items-center justify-center font-pixel text-[9px]"
+                        style={{ backgroundColor: '#2D3192', color: '#FFD700' }}>
+                        {(mgr.teamName || mgr.name)[0].toUpperCase()}
                       </div>
-                    )}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-pixel text-[11px] truncate" style={{ color: '#FFD700' }}>
+                          {mgr.teamName || mgr.name}
+                        </div>
+                        {mgr.realName && (
+                          <div className="font-pixel text-[8px] truncate" style={{ color: '#8899AA' }}>
+                            {mgr.realName}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className="font-pixel text-lg" style={{ color: '#FFD700' }}>{mgr.total}</span>
+                        {mgr.topScorerCorrect && (
+                          <span className="font-pixel text-[6px] px-1" style={{ backgroundColor: '#FFD700', color: '#1A1A2E' }}>+5</span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Bottom Row: Stats */}
+                    <div className="flex items-center gap-4 mt-2 ml-7">
+                      <span className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>
+                        ALIVE <span style={{ color: mgr.teamsAlive > 0 ? '#00AA00' : '#E60012' }}>{mgr.teamsAlive}</span>
+                      </span>
+                      <span className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>
+                        SF <span style={{ color: '#E8E8E8' }}>{mgr.semiFinalists}</span>
+                      </span>
+                      <span className="font-pixel text-[7px]" style={{ color: '#8899AA' }}>
+                        F <span style={{ color: mgr.finalists > 0 ? '#FFD700' : '#8899AA' }}>{mgr.finalists}</span>
+                      </span>
+                      {topTeam && (
+                        <span className="font-pixel text-[7px] ml-auto" style={{ color: '#8899AA' }}>
+                          BEST {topTeam.flag} <span style={{ color: '#FFD700' }}>+{topTeam.points}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Desktop Layout */}
+                  <div className="hidden md:grid md:grid-cols-12 md:gap-2 md:items-center">
+                    <div className="col-span-1 font-pixel text-[10px]" style={{ color: rankColor(idx) }}>
+                      {idx + 1}
+                    </div>
+                    <div className="col-span-5 flex items-center gap-2">
+                      <div className="w-7 h-7 flex-shrink-0 flex items-center justify-center font-pixel text-[9px]"
+                        style={{ backgroundColor: '#2D3192', color: '#FFD700' }}>
+                        {(mgr.teamName || mgr.name)[0].toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-pixel text-[11px] truncate" style={{ color: '#FFD700' }}>
+                          {mgr.teamName || mgr.name}
+                        </div>
+                        {mgr.realName && (
+                          <div className="font-pixel text-[8px] truncate" style={{ color: '#8899AA' }}>
+                            {mgr.realName}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="col-span-2 text-center">
+                      <span className="font-pixel text-sm" style={{ color: '#FFD700' }}>{mgr.total}</span>
+                      {mgr.topScorerCorrect && (
+                        <span className="font-pixel text-[6px] ml-1 px-1" style={{ backgroundColor: '#FFD700', color: '#1A1A2E' }}>+5</span>
+                      )}
+                    </div>
+                    <div className="col-span-1 text-center font-pixel text-[9px]" style={{ color: mgr.teamsAlive > 0 ? '#00AA00' : '#E60012' }}>
+                      {mgr.teamsAlive}
+                    </div>
+                    <div className="col-span-1 text-center font-pixel text-[9px]" style={{ color: '#E8E8E8' }}>
+                      {mgr.semiFinalists}
+                    </div>
+                    <div className="col-span-1 text-center font-pixel text-[9px]" style={{ color: mgr.finalists > 0 ? '#FFD700' : '#8899AA' }}>
+                      {mgr.finalists}
+                    </div>
+                    <div className="col-span-1 text-center">
+                      {topTeam && (
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="text-sm">{topTeam.flag}</span>
+                          <span className="font-pixel text-[7px]" style={{ color: '#FFD700' }}>+{topTeam.points}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

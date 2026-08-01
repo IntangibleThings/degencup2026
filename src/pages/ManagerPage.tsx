@@ -118,9 +118,9 @@ export default function ManagerPage() {
                 ) : (
                   <div className="font-pixel text-[8px]" style={{ color: '#AABBCC' }}>PENDING</div>
                 )}
-                {isOwnTeam && !state.settings.topScorerActual && (
+                {isOwnTeam && !manager.topScorerGuess && (
                   <button onClick={() => navigate('/draft')} className="font-pixel text-[7px] mt-1 px-2 py-1" style={{ backgroundColor: '#2D3192', color: '#FFD700' }}>
-                    EDIT PICK
+                    ADD PICK
                   </button>
                 )}
               </div>

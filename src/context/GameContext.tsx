@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, useState } from 'react';
 import type { Tier, AppSettings, Manager, TournamentResults, TopScorerGuess, Wager, WagerComment } from '@/data/tournament';
 import { SEED_WAGERS, SEED_COMMENTS } from '@/data/seedWagers';
+import { deriveResultsFromMatrixPure } from '@/data/resultsEngine';
+import { VERSION } from '@/data/version';
+import type { MatrixMatch } from '@/data/matchMatrix';
+import { initMatrix, persistMatrix, updateMatchScorePure, assignKnockoutTeamPure, resetMatrix as resetMatrixFn } from '@/data/matchMatrix';
 import { DEFAULT_SETTINGS, getAllTeams } from '@/data/tournament';
 import {
   isConfigured,
@@ -73,10 +77,12 @@ const LOCAL_STATE_KEY = 'vibecup_state_backup';
 
 function saveStateToLocal(state: AppState) {
   try {
+    // CRITICAL: Do NOT save 'results' to localStorage.
+    // Results are always derived from the Match Matrix (single source of truth).
+    // Saving derived results creates a stale cache that overwrites correct data.
     const toSave = {
       managers: state.managers,
       settings: state.settings,
-      results: state.results,
       wagers: state.wagers,
       comments: state.comments,
     };
@@ -266,6 +272,12 @@ interface GameContextType {
   getCommentsForWager: (wagerId: string) => WagerComment[];
   loadSeedData: () => void;
   toggleCommentsLock: () => Promise<void>;
+  // Matrix mutation (centralized — all matrix changes go through here)
+  updateMatchScore: (id: number, homeGoals: number, awayGoals: number) => boolean;
+  assignKnockoutTeam: (matchId: number, side: 'home' | 'away', teamCode: string, teamName: string) => boolean;
+  resetMatchMatrix: () => void;
+  getMatrix: () => MatrixMatch[];
+
   // Utility
   getManager: (name: string) => Manager | undefined;
   getManagerByNameAndPin: (name: string, pin: string) => Manager | undefined;
@@ -285,6 +297,25 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   dispatchRef.current = dispatch;
   stateRef.current = state;
 
+  // ── MATRIX STATE (outside React state for performance, version counter triggers derives) ──
+  const matrixRef = useRef<MatrixMatch[]>(initMatrix());
+  const [matrixVersion, setMatrixVersion] = useState(0);
+
+  // Derive results whenever matrixVersion changes (event-driven, NOT polling)
+  useEffect(() => {
+    if (matrixVersion === 0) return; // Skip initial (handled by mount effect)
+    try {
+      const derived = deriveResultsFromMatrixPure(matrixRef.current);
+      const keys = Object.keys(derived);
+      if (keys.length > 0) {
+        console.log('[GAME] DISPATCH: derived', keys.length, 'teams from matrix v' + matrixVersion);
+        dispatch({ type: 'SET_RESULTS', payload: derived });
+      }
+    } catch (e) {
+      console.error('[GAME] Matrix derive failed:', e);
+    }
+  }, [matrixVersion]);
+
   useEffect(() => {
     dispatchRef.current = dispatch;
   }, [dispatch]);
@@ -297,32 +328,45 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   // INITIAL LOAD + SUBSCRIPTION ONLY (NO POLLING - prevents quota exhaustion)
   // ========================================================================
   useEffect(() => {
-    console.log('[GAME] === MOUNT ===');
+    console.log('[GAME] === MOUNT ===', VERSION);
 
     const savedUser = loadUserFromLocal();
     if (savedUser) {
       dispatch({ type: 'SET_USER', payload: savedUser });
     }
 
-    // Load from localStorage first (works even without Firebase)
+    // Load managers/settings/wagers/comments from localStorage
     const localState = loadStateFromLocal();
     if (localState) {
       console.log('[GAME] Loaded from localStorage:', localState.managers?.length || 0, 'managers');
-      if (localState.managers && localState.managers.length > 0) {
-        dispatch({ type: 'SET_MANAGERS', payload: localState.managers });
+      if (localState.managers && (localState.managers as Manager[]).length > 0) {
+        dispatch({ type: 'SET_MANAGERS', payload: localState.managers as Manager[] });
       }
       if (localState.settings) {
-        dispatch({ type: 'SET_SETTINGS', payload: migrateSettings(localState.settings as unknown as Record<string, unknown>) });
+        dispatch({ type: 'SET_SETTINGS', payload: migrateSettings((localState.settings || {}) as unknown as Record<string, unknown>) });
       }
-      if (localState.results) {
-        dispatch({ type: 'SET_RESULTS', payload: localState.results as TournamentResults });
-      }
-      if (localState.wagers && localState.wagers.length > 0) {
+      if (localState.wagers && (localState.wagers as Wager[]).length > 0) {
         dispatch({ type: 'SET_WAGERS', payload: localState.wagers as Wager[] });
       }
-      if (localState.comments && localState.comments.length > 0) {
+      if (localState.comments && (localState.comments as WagerComment[]).length > 0) {
         dispatch({ type: 'SET_COMMENTS', payload: localState.comments as WagerComment[] });
       }
+    }
+
+    // ALWAYS derive results from Match Matrix on mount — regardless of localState
+    // This ensures standings are correct even on first visit or after storage clear
+    try {
+      const scoredCount = matrixRef.current.filter((m: MatrixMatch) => m.homeGoals !== null).length;
+      console.log('[GAME] Matrix has', scoredCount, 'scored matches');
+      const derived = deriveResultsFromMatrixPure(matrixRef.current);
+      const derivedKeys = Object.keys(derived);
+      console.log('[GAME] Derived results for', derivedKeys.length, 'teams');
+      if (derivedKeys.length > 0) {
+        console.log('[GAME] DISPATCH #1: SET_RESULTS from matrix derive (' + derivedKeys.length + ' teams)');
+        dispatch({ type: 'SET_RESULTS', payload: derived });
+      }
+    } catch (e) {
+      console.error('[GAME] Matrix derive failed:', e);
     }
 
     if (!isConfigured()) {
@@ -347,7 +391,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     loadSettingsAndResults()
       .then((data) => {
         if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-        if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+        // NOTE: We intentionally do NOT load 'results' from Firebase.
+        // Results are always derived from the Match Matrix (single source of truth).
+        // Loading stale Firebase results would overwrite correct matrix-derived data.
       })
       .catch(() => {});
 
@@ -377,7 +423,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     const unsubSettings = subscribeToSettingsAndResults((data) => {
       if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-      if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+      // NOTE: We intentionally do NOT overwrite 'results' from Firebase subscription.
+      // Results are always derived from the Match Matrix (single source of truth).
+      // Firebase 'results' are a stale cache that would overwrite correct data.
     });
 
     const unsubWagers = subscribeToWagers((cloudWagers) => {
@@ -392,10 +440,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       dispatchRef.current({ type: 'SET_COMMENTS', payload: comments });
     });
 
-    // Reload from cloud when tab becomes visible (user switches back to this tab)
+    // Reload from cloud when tab becomes visible + re-derive from matrix
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        console.log('[GAME] Tab visible, reloading from cloud');
+        console.log('[GAME] Tab became visible');
+        // Re-derive results from matrix (storage may have been updated by another tab)
+        try {
+          const fromStorage = initMatrix(); // reads fresh from storage
+          matrixRef.current = fromStorage;
+          const derived = deriveResultsFromMatrixPure(matrixRef.current);
+          const keys = Object.keys(derived);
+          if (keys.length > 0) {
+            console.log('[GAME] Tab visible: derived', keys.length, 'teams from fresh matrix');
+            dispatchRef.current({ type: 'SET_RESULTS', payload: derived });
+          }
+        } catch (e) {
+          console.error('[GAME] Tab-visible derive failed:', e);
+        }
         loadAllManagers()
           .then((cloudManagers) => {
             const managers = cloudManagers as unknown as Manager[];
@@ -423,13 +484,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { saveUserToLocal(state.currentUser); }, [state.currentUser]);
 
-  // Auto-save all state to localStorage whenever it changes
+  // Auto-save state to localStorage whenever it changes (NOT results — derived from matrix)
   useEffect(() => {
     const timeout = setTimeout(() => {
       saveStateToLocal(state);
-    }, 500); // debounce 500ms
+    }, 500);
     return () => clearTimeout(timeout);
-  }, [state.managers, state.settings, state.results, state.wagers, state.comments]);
+  }, [state.managers, state.settings, state.wagers, state.comments]);
 
   // ========================================================================
   // ACTIONS
@@ -524,15 +585,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       dispatchRef.current({ type: 'SET_MANAGERS', payload: managers });
       const data = await loadSettingsAndResults();
       if (data?.settings) dispatchRef.current({ type: 'SET_SETTINGS', payload: migrateSettings(data.settings as Record<string, unknown>) });
-      if (data?.results) dispatchRef.current({ type: 'SET_RESULTS', payload: data.results as TournamentResults });
+      // NOTE: Do NOT load results from Firebase. Results are always derived
+      // from the Match Matrix (single source of truth).
       return managers.length;
     } catch (err) { console.error('[GAME] Load failed:', err); return 0; }
   }, []);
 
   const forceSync = useCallback(async () => {
     if (!isConfigured()) return;
-    await syncAllToCloud(state.managers as unknown as Record<string, unknown>[], state.settings, state.results);
-  }, [state.managers, state.settings, state.results]);
+    // NOTE: Only sync managers and settings to Firebase. Results are derived
+    // from the Match Matrix and should never be stored in Firebase.
+    await syncAllToCloud(state.managers as unknown as Record<string, unknown>[], state.settings, null);
+  }, [state.managers, state.settings]);
 
   const saveSettings = useCallback(async (settings: AppSettings) => {
     dispatch({ type: 'SET_SETTINGS', payload: settings });
@@ -547,14 +611,42 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const saveResults = useCallback(async (results: TournamentResults) => {
     dispatch({ type: 'SET_RESULTS', payload: results });
-    if (isConfigured()) {
-      try {
-        const { saveResults: cloudSaveResults } = await import('@/lib/firebase');
-        await cloudSaveResults(results);
-        console.log('[CLOUD] Results saved');
-      } catch (err) { console.error('[CLOUD] Results save failed:', err); }
-    }
   }, []);
+
+  // ── MATRIX MUTATION (centralized — all matrix changes go through here) ──
+
+  const updateMatchScoreInContext = useCallback((id: number, homeGoals: number, awayGoals: number): boolean => {
+    const next = updateMatchScorePure(matrixRef.current, id, homeGoals, awayGoals);
+    const idx = matrixRef.current.findIndex(m => m.id === id);
+    const changed = idx !== -1 && (matrixRef.current[idx].homeGoals !== homeGoals || matrixRef.current[idx].awayGoals !== awayGoals);
+    if (!changed) return false;
+    matrixRef.current = next;
+    persistMatrix(next);
+    setMatrixVersion(v => v + 1);
+    console.log('[MATRIX] Score updated for match', id, ':', homeGoals, '-', awayGoals);
+    return true;
+  }, []);
+
+  const assignKnockoutTeamInContext = useCallback((matchId: number, side: 'home' | 'away', teamCode: string, teamName: string): boolean => {
+    const next = assignKnockoutTeamPure(matrixRef.current, matchId, side, teamCode, teamName);
+    const idx = matrixRef.current.findIndex(m => m.id === matchId);
+    if (idx === -1) return false;
+    const cur = side === 'home' ? matrixRef.current[idx].homeTeam : matrixRef.current[idx].awayTeam;
+    if (cur === teamCode) return false;
+    matrixRef.current = next;
+    persistMatrix(next);
+    setMatrixVersion(v => v + 1);
+    console.log('[MATRIX] Assigned', teamCode, 'to', side, 'of match', matchId);
+    return true;
+  }, []);
+
+  const resetMatrixInContext = useCallback(() => {
+    matrixRef.current = resetMatrixFn();
+    setMatrixVersion(v => v + 1);
+    console.log('[MATRIX] Reset to fresh schedule');
+  }, []);
+
+  const getMatrixFromContext = useCallback(() => matrixRef.current, []);
 
   // Degen Den wager implementations — Beer Mug Wager Flow
   // Flow: pending_acceptance (24h expiry) → live → resolved/cancelled/rejected
@@ -708,6 +800,32 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return used;
   }, [state.managers, state.settings.draftMode]);
 
+  // Levenshtein distance for fuzzy string matching (catches typos in top scorer names)
+  const levenshtein = (a: string, b: string): number => {
+    const m = a.length, n = b.length;
+    if (m === 0) return n; if (n === 0) return m;
+    const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+    return dp[m][n];
+  };
+
+  // Fuzzy match: exact first, then allow up to 2 char differences or 25% edit distance
+  const fuzzyMatchTopScorer = (guess: string, actual: string): boolean => {
+    const g = guess.toLowerCase().trim();
+    const a = actual.toLowerCase().trim();
+    if (g === a) return true;
+    const dist = levenshtein(g, a);
+    return dist <= 2 || dist <= Math.max(g.length, a.length) * 0.25;
+  };
+
   const getScoreForManager = useCallback((managerId: string) => {
     const manager = state.managers.find(m => m.id === managerId);
     const teams = getTeamsForManager(managerId);
@@ -718,7 +836,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const hasChampion = teams.some(t => { const r = state.results[t.code]; return r && r.wonWorldCup; });
     let topScorerCorrect = false;
     if (manager?.topScorerGuess && state.settings.topScorerActual) {
-      if (manager.topScorerGuess.name.toLowerCase().trim() === state.settings.topScorerActual.name.toLowerCase().trim()) {
+      if (fuzzyMatchTopScorer(manager.topScorerGuess.name, state.settings.topScorerActual.name)) {
         total += state.settings.scoring.topScorerBonus; topScorerCorrect = true;
       }
     }
@@ -739,6 +857,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       state, dispatch, firebaseEnabled, setUser, addManager, removeManager, submitTeams,
       submitTopScorer, setManagerPaid, setManagerActive, warnManager, resetManagerCode, updateTier, updateResult,
       lockDraft, unlockDraft, forceSync, loadFromCloud, saveSettings, saveResults,
+      updateMatchScore: updateMatchScoreInContext,
+      assignKnockoutTeam: assignKnockoutTeamInContext,
+      resetMatchMatrix: resetMatrixInContext,
+      getMatrix: getMatrixFromContext,
       createWager, acceptWager, resolveWager, cancelWager, deleteWager, toggleWagerComments, getWager,
       addComment, getCommentsForWager, loadSeedData, toggleCommentsLock,
       getManager, getManagerByNameAndPin, getTeamsForManager,

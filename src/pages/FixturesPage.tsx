@@ -5,12 +5,12 @@ import { Calendar } from 'lucide-react';
 
 export default function FixturesPage() {
   const [matrix, setMatrix] = useState<MatrixMatch[]>(getMatrix());
-  const [stats, setStats] = useState(getMatrixStats());
+  const [stats, setStats] = useState(getMatrixStats(getMatrix()));
 
   useEffect(() => {
     const interval = setInterval(() => {
       setMatrix(getMatrix());
-      setStats(getMatrixStats());
+      setStats(getMatrixStats(getMatrix()));
     }, 2000);
     return () => clearInterval(interval);
   }, []);

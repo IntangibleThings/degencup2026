@@ -76,20 +76,19 @@ export default function TestPage() {
   };
 
   const testApi = async () => {
-    setApiTestResult('Testing API...');
+    setApiTestResult('Testing football-data.org...');
     try {
-      const { loadApiConfig, syncResults } = await import('@/data/apiSync');
-      const config = loadApiConfig();
-      const result = await syncResults(config);
+      const { fetchWorldCupMatches } = await import('@/data/footballdata');
+      const result = await fetchWorldCupMatches();
       if (result.errors.length > 0) {
-        setApiTestResult('API ERROR: ' + result.errors.join(', '));
-      } else if (result.updated > 0) {
-        setApiTestResult('API OK! Updated ' + result.updated + ' teams. Calls used: ~1-2');
+        setApiTestResult('CORS blocked (expected on deployed sites). Use Paste Scores or deploy the proxy function.');
+      } else if (result.matches.length > 0) {
+        setApiTestResult('API OK! Loaded ' + result.matches.length + ' matches via ' + result.method);
       } else {
-        setApiTestResult('API OK! No finished matches found yet (tournament has not started). Calls used: ~1');
+        setApiTestResult('API OK! No matches returned.');
       }
     } catch (err) {
-      setApiTestResult('API ERROR: ' + (err as Error).message);
+      setApiTestResult('ERROR: ' + (err as Error).message);
     }
   };
 

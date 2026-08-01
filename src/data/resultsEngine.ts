@@ -14,8 +14,8 @@
 import type { Match } from './fixtures';
 import type { TournamentResults } from './tournament';
 import { GROUPS as TOURNAMENT_GROUPS, TEAM_FLAGS } from './tournament';
-import { getScoredMatches } from './matchMatrix';
 import type { MatrixMatch } from './matchMatrix';
+import { getScoredMatches, getMatrix } from './matchMatrix';
 
 // Generic match input — accepts both Match (fixtures) and MatrixMatch (football-data.org)
 // football-data.org uses status 'FINISHED' which is not in our Match type
@@ -118,9 +118,14 @@ function getKnockoutRound(round: string): 'r32' | 'r16' | 'qf' | 'sf' | 'final' 
  * Reads ALL scored matches from the matrix and calculates cumulative standings.
  * This is the main entry point — always reads from the matrix for cumulative results.
  */
-export function deriveResultsFromMatrix(): TournamentResults {
-  const matches = getScoredMatches();
+export function deriveResultsFromMatrixPure(matrix: MatrixMatch[]): TournamentResults {
+  const matches = getScoredMatches(matrix);
   return deriveResultsFromMatches(matches as unknown as Match[]);
+}
+
+/** Backward-compatible wrapper — reads matrix from storage. */
+export function deriveResultsFromMatrix(): TournamentResults {
+  return deriveResultsFromMatrixPure(getMatrix());
 }
 
 /**
@@ -283,9 +288,14 @@ export function deriveResultsFromMatches(matches: ScoredMatch[]): TournamentResu
  * Generate preview from the Match Matrix (cumulative — reads ALL scored matches).
  * This is the main entry point for the admin preview UI.
  */
-export function generateResultsPreviewFromMatrix(): ReturnType<typeof generateResultsPreview> {
-  const matches = getScoredMatches();
+export function generateResultsPreviewFromMatrixPure(matrix: MatrixMatch[]): ReturnType<typeof generateResultsPreview> {
+  const matches = getScoredMatches(matrix);
   return generateResultsPreview(matches as unknown as Match[]);
+}
+
+/** Backward-compatible wrapper — reads matrix from storage. */
+export function generateResultsPreviewFromMatrix(): ReturnType<typeof generateResultsPreview> {
+  return generateResultsPreviewFromMatrixPure(getMatrix());
 }
 
 /**

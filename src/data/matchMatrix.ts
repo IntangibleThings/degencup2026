@@ -1,6 +1,8 @@
 // Match Matrix — Master fixture list for World Cup 2026
 // All 104 matches are pre-defined. Scores are filled in as they arrive.
-// This is the single source of truth for all match results.
+// This module has PURE functions (accept matrix param) + backward-compatible
+// wrappers (no param — read from storage). GameContext uses pure versions
+// for React integration. AdminPage uses backward-compatible wrappers.
 
 import rawSchedule from './wc2026_schedule.json';
 import { mapTeamName } from './firecrawl';
@@ -11,10 +13,10 @@ export interface MatrixMatch {
   matchday: number;
   round: string;
   date: string;
-  homeTeam: string;      // 3-letter code
-  homeTeamName: string;  // Full name
-  awayTeam: string;      // 3-letter code
-  awayTeamName: string;  // Full name
+  homeTeam: string;
+  homeTeamName: string;
+  awayTeam: string;
+  awayTeamName: string;
   homeGoals: number | null;
   awayGoals: number | null;
   status: string;
@@ -23,12 +25,9 @@ export interface MatrixMatch {
 const STORAGE_KEY = 'wc2026_match_matrix';
 const SESSION_KEY = 'wc2026_match_matrix_backup';
 
-// ── INITIALIZATION ──
+// ── STORAGE UTILITIES ──
 
-// Load from storage or JSON schedule. This is the fallback default.
-let _defaultMatrix: MatrixMatch[] = loadFromStorage() || loadFromSchedule();
-
-function loadFromSchedule(): MatrixMatch[] {
+export function loadFromSchedule(): MatrixMatch[] {
   return (rawSchedule as MatrixMatch[]).map(m => ({
     ...m,
     homeGoals: m.homeGoals ?? null,
@@ -36,9 +35,7 @@ function loadFromSchedule(): MatrixMatch[] {
   }));
 }
 
-/** Read from localStorage first, then sessionStorage fallback. Returns null if both fail. */
-function loadFromStorage(): MatrixMatch[] | null {
-  // Try localStorage first
+export function loadFromStorage(): MatrixMatch[] | null {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -48,7 +45,6 @@ function loadFromStorage(): MatrixMatch[] | null {
   } catch (e) {
     console.warn('[MATRIX] localStorage read failed:', e);
   }
-  // Fallback: sessionStorage (works in iOS private mode)
   try {
     const saved = sessionStorage.getItem(SESSION_KEY);
     if (saved) {
@@ -61,17 +57,14 @@ function loadFromStorage(): MatrixMatch[] | null {
   return null;
 }
 
-/** Write to localStorage first, then sessionStorage fallback. Logs errors for diagnosis. */
-function persistMatrix(data: MatrixMatch[]) {
+export function persistMatrix(data: MatrixMatch[]) {
   let saved = false;
-  // Try localStorage
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     saved = true;
   } catch (e) {
     console.warn('[MATRIX] localStorage write failed:', e);
   }
-  // Always try sessionStorage as backup (works in iOS private mode)
   try {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
     saved = true;
@@ -79,85 +72,116 @@ function persistMatrix(data: MatrixMatch[]) {
     console.warn('[MATRIX] sessionStorage write failed:', e);
   }
   if (!saved) {
-    console.error('[MATRIX] CRITICAL: Could not persist match matrix to any storage');
+    console.error('[MATRIX] CRITICAL: Could not persist to any storage');
   }
 }
 
-// ── PUBLIC API ──
+export function createFreshMatrix(): MatrixMatch[] {
+  return loadFromSchedule();
+}
 
-/** Get the full matrix (all 104 matches) — always reads fresh from storage */
+export function initMatrix(): MatrixMatch[] {
+  return loadFromStorage() || loadFromSchedule();
+}
+
+// ── BACKWARD-COMPATIBLE: read matrix from storage ──
+
 export function getMatrix(): MatrixMatch[] {
-  const fromStorage = loadFromStorage();
-  if (fromStorage) {
-    _defaultMatrix = fromStorage; // Keep fallback in sync
-    return fromStorage;
-  }
-  // If both storage types are empty, return the in-memory default
-  return _defaultMatrix;
+  return loadFromStorage() || loadFromSchedule();
 }
 
-/** Get the in-memory matrix reference for mutation (used by update/assign functions) */
 export function getMatrixRef(): MatrixMatch[] {
-  return _defaultMatrix;
+  return getMatrix();
 }
 
-/** Sync in-memory matrix to storage */
-export function syncMatrix() {
-  persistMatrix(_defaultMatrix);
+export function syncMatrix(): void {
+  const data = getMatrix();
+  persistMatrix(data);
 }
 
-/** Get only matches that have scores */
-export function getScoredMatches(): MatrixMatch[] {
-  return getMatrixRef().filter(m => m.homeGoals !== null && m.awayGoals !== null);
+// ── PURE FUNCTIONS (accept matrix param) ──
+
+export function updateMatchScorePure(matrix: MatrixMatch[], id: number, homeGoals: number, awayGoals: number): MatrixMatch[] {
+  const idx = matrix.findIndex(m => m.id === id);
+  if (idx === -1) return matrix;
+  const next = [...matrix];
+  next[idx] = { ...next[idx], homeGoals, awayGoals, status: 'FT' };
+  return next;
 }
 
-/** Get matches by round */
-export function getMatchesByRound(round: string): MatrixMatch[] {
-  return getMatrixRef().filter(m => m.round === round);
+export function assignKnockoutTeamPure(matrix: MatrixMatch[], matchId: number, side: 'home' | 'away', teamCode: string, teamName: string): MatrixMatch[] {
+  const idx = matrix.findIndex(m => m.id === matchId);
+  if (idx === -1) return matrix;
+  const next = [...matrix];
+  if (side === 'home') {
+    next[idx] = { ...next[idx], homeTeam: teamCode, homeTeamName: teamName };
+  } else {
+    next[idx] = { ...next[idx], awayTeam: teamCode, awayTeamName: teamName };
+  }
+  return next;
 }
 
-/** Get a single match by ID */
-export function getMatchById(id: number): MatrixMatch | undefined {
-  return getMatrixRef().find(m => m.id === id);
-}
+// ── BACKWARD-COMPATIBLE MUTATORS (read from storage, mutate, persist) ──
 
-/** Find a match by team codes (home/away) */
-export function findMatch(home: string, away: string): MatrixMatch | undefined {
-  return getMatrixRef().find(m =>
-    (m.homeTeam === home && m.awayTeam === away) ||
-    (m.homeTeam === away && m.awayTeam === home)  // Allow reversed
-  );
-}
-
-/** Check if a match already has a score */
-export function isMatchScored(id: number): boolean {
-  const m = getMatrixRef().find(x => x.id === id);
-  return m ? m.homeGoals !== null && m.awayGoals !== null : false;
-}
-
-/** Update a match score. Returns true if updated, false if not found. */
 export function updateMatchScore(id: number, homeGoals: number, awayGoals: number): boolean {
-  const m = getMatrixRef();
-  const idx = m.findIndex(x => x.id === id);
+  const matrix = getMatrix();
+  const idx = matrix.findIndex(m => m.id === id);
   if (idx === -1) return false;
-  m[idx] = {
-    ...m[idx],
-    homeGoals,
-    awayGoals,
-    status: 'FT',
-  };
-  syncMatrix();
+  matrix[idx] = { ...matrix[idx], homeGoals, awayGoals, status: 'FT' };
+  persistMatrix(matrix);
   return true;
 }
 
-/** Reset the entire matrix to the original schedule */
-export function resetMatrix() {
-  _defaultMatrix = (rawSchedule as MatrixMatch[]).map(m => ({
-    ...m,
-    homeGoals: m.homeGoals ?? null,
-    awayGoals: m.awayGoals ?? null,
-  }));
-  syncMatrix();
+export function assignKnockoutTeam(matchId: number, side: 'home' | 'away', teamCode: string, teamName: string): boolean {
+  const matrix = getMatrix();
+  const idx = matrix.findIndex(m => m.id === matchId);
+  if (idx === -1) return false;
+  if (side === 'home') {
+    matrix[idx] = { ...matrix[idx], homeTeam: teamCode, homeTeamName: teamName };
+  } else {
+    matrix[idx] = { ...matrix[idx], awayTeam: teamCode, awayTeamName: teamName };
+  }
+  persistMatrix(matrix);
+  return true;
+}
+
+export function resetMatrix(): MatrixMatch[] {
+  const fresh = loadFromSchedule();
+  persistMatrix(fresh);
+  return fresh;
+}
+
+// ── PURE QUERY FUNCTIONS (accept matrix param) ──
+
+export function getScoredMatches(matrix: MatrixMatch[]): MatrixMatch[] {
+  return matrix.filter(m => m.homeGoals !== null && m.awayGoals !== null);
+}
+
+export function getMatchesByRound(matrix: MatrixMatch[], round: string): MatrixMatch[] {
+  return matrix.filter(m => m.round === round);
+}
+
+export function getMatchById(matrix: MatrixMatch[], id: number): MatrixMatch | undefined {
+  return matrix.find(m => m.id === id);
+}
+
+export function findMatch(matrix: MatrixMatch[], home: string, away: string): MatrixMatch | undefined {
+  return matrix.find(m =>
+    (m.homeTeam === home && m.awayTeam === away) ||
+    (m.homeTeam === away && m.awayTeam === home)
+  );
+}
+
+export function isMatchScored(matrix: MatrixMatch[], id: number): boolean {
+  const m = matrix.find(x => x.id === id);
+  return m ? m.homeGoals !== null && m.awayGoals !== null : false;
+}
+
+// ── BACKWARD-COMPATIBLE QUERY (no matrix param) ──
+
+export function isMatchScoredLegacy(id: number): boolean {
+  const m = getMatrix().find(x => x.id === id);
+  return m ? m.homeGoals !== null && m.awayGoals !== null : false;
 }
 
 // ── PASTE PARSING ──
@@ -165,14 +189,11 @@ export function resetMatrix() {
 export interface PasteResult {
   matched: { matchId: number; homeTeam: string; awayTeam: string; homeGoals: number; awayGoals: number }[];
   unmatched: string[];
-  overwritten: number; // How many existing scores were replaced
+  overwritten: number;
 }
 
-/**
- * Parse pasted text and map scores to match IDs in the matrix.
- * Supports: "Mexico 2-0 South Africa", "Group A: MEX 2-0 RSA", etc.
- */
-export function parsePastedScoresToMatrix(text: string): PasteResult {
+/** Parse pasted text. PURE version — accepts matrix. */
+export function parsePastedScoresToMatrix(text: string, matrix: MatrixMatch[]): PasteResult {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const result: PasteResult = { matched: [], unmatched: [], overwritten: 0 };
 
@@ -183,20 +204,16 @@ export function parsePastedScoresToMatrix(text: string): PasteResult {
       continue;
     }
 
-    // Look up the match in the matrix
-    const match = findMatchByParsed(parsed);
+    const match = findMatchByParsed(parsed, matrix);
     if (!match) {
       result.unmatched.push(line);
       continue;
     }
 
-    // Check if overwriting
-    if (isMatchScored(match.id)) {
+    if (isMatchScored(matrix, match.id)) {
       result.overwritten++;
     }
 
-    // Update the matrix
-    updateMatchScore(match.id, parsed.homeGoals, parsed.awayGoals);
     result.matched.push({
       matchId: match.id,
       homeTeam: match.homeTeam,
@@ -209,6 +226,11 @@ export function parsePastedScoresToMatrix(text: string): PasteResult {
   return result;
 }
 
+/** Backward-compatible wrapper — reads matrix from storage. */
+export function parsePastedScores(text: string): PasteResult {
+  return parsePastedScoresToMatrix(text, getMatrix());
+}
+
 // ── INTERNAL PARSING HELPERS ──
 
 interface ParsedLine {
@@ -218,17 +240,12 @@ interface ParsedLine {
   awayGoals: number;
 }
 
-// Set of all valid 3-letter team codes for quick lookup
 const VALID_TEAM_CODES = new Set<string>(Object.values(GROUPS).flat());
 
 function tryParseLine(line: string): ParsedLine | null {
-  // Pattern: "Team A X-Y Team B" or "Team A X - Y Team B"
-  // Supports all dash types: hyphen (-), en dash (–), em dash (—), minus sign (−), etc.
   const DASH = '[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]';
   const patterns = [
-    // "France 3-1 Senegal" or "France 3 - 1 Senegal"
     new RegExp(`(.+?)\\s+(\\d+)\\s*${DASH}\\s*(\\d+)\\s+(.+)`),
-    // "Group A: Mexico 2-0 South Africa"
     new RegExp(`(?:group\\s*[a-l]:\\s*)?(.+?)\\s+(\\d+)\\s*${DASH}\\s*(\\d+)\\s+(.+)`, 'i'),
   ];
 
@@ -238,7 +255,6 @@ function tryParseLine(line: string): ParsedLine | null {
       const [, rawHome, rawHomeGoals, rawAwayGoals, rawAway] = match;
       const homeTrimmed = rawHome.trim();
       const awayTrimmed = rawAway.trim();
-      // Try full-name mapping first, then fallback to 3-letter codes
       const homeCode = mapTeamName(homeTrimmed) || (VALID_TEAM_CODES.has(homeTrimmed.toUpperCase()) ? homeTrimmed.toUpperCase() : null);
       const awayCode = mapTeamName(awayTrimmed) || (VALID_TEAM_CODES.has(awayTrimmed.toUpperCase()) ? awayTrimmed.toUpperCase() : null);
       if (homeCode && awayCode) {
@@ -254,21 +270,17 @@ function tryParseLine(line: string): ParsedLine | null {
   return null;
 }
 
-function findMatchByParsed(parsed: ParsedLine): MatrixMatch | undefined {
-  const m = getMatrixRef();
-  // Try exact home/away first
-  let match = m.find(x =>
+function findMatchByParsed(parsed: ParsedLine, matrix: MatrixMatch[]): MatrixMatch | undefined {
+  let match = matrix.find(x =>
     x.homeTeam === parsed.homeTeam && x.awayTeam === parsed.awayTeam
   );
-  // Try reversed
   if (!match) {
-    match = m.find(x =>
+    match = matrix.find(x =>
       x.homeTeam === parsed.awayTeam && x.awayTeam === parsed.homeTeam
     );
   }
-  // Try with the score swapped for reversed
   if (!match) {
-    match = m.find(x =>
+    match = matrix.find(x =>
       (x.homeTeam === parsed.homeTeam || x.homeTeamName.toLowerCase().includes(parsed.homeTeam.toLowerCase())) &&
       (x.awayTeam === parsed.awayTeam || x.awayTeamName.toLowerCase().includes(parsed.awayTeam.toLowerCase()))
     );
@@ -278,15 +290,14 @@ function findMatchByParsed(parsed: ParsedLine): MatrixMatch | undefined {
 
 // ── STATS ──
 
-export function getMatrixStats() {
-  const m = getMatrixRef();
-  const scored = m.filter(x => x.homeGoals !== null && x.awayGoals !== null);
-  const groupMatches = m.filter(x => x.round.startsWith('GROUP_'));
+export function getMatrixStats(matrix: MatrixMatch[]) {
+  const scored = matrix.filter(x => x.homeGoals !== null && x.awayGoals !== null);
+  const groupMatches = matrix.filter(x => x.round.startsWith('GROUP_'));
   const groupScored = groupMatches.filter(x => x.homeGoals !== null);
   return {
-    totalMatches: m.length,
+    totalMatches: matrix.length,
     scoredMatches: scored.length,
-    remainingMatches: m.length - scored.length,
+    remainingMatches: matrix.length - scored.length,
     groupTotal: groupMatches.length,
     groupScored: groupScored.length,
     knockoutScored: scored.length - groupScored.length,

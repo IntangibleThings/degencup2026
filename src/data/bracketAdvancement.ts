@@ -1,7 +1,8 @@
 // Bracket Advancement — Maps group results to knockout slots for 48-team World Cup 2026
-// After group stage completes, top 2 from each group + 8 best 3rd-place teams advance.
+// All functions are PURE — accept matrix as parameter, do not mutate global state.
 
-import { getMatrix, getMatrixRef, syncMatrix } from './matchMatrix';
+import type { MatrixMatch } from './matchMatrix';
+import { assignKnockoutTeam, getMatrix } from './matchMatrix';
 
 interface GroupResult {
   group: string;
@@ -10,8 +11,7 @@ interface GroupResult {
 
 // ── GROUP STANDINGS CALCULATION ──
 
-function calculateGroupResults(): GroupResult[] {
-  const matrix = getMatrix();
+function calculateGroupResults(matrix: MatrixMatch[]): GroupResult[] {
   const groupLetters = 'ABCDEFGHIJKL';
   const results: GroupResult[] = [];
 
@@ -73,7 +73,7 @@ function getBestThirdPlaced(groupResults: GroupResult[]): { group: string; code:
 }
 
 // ── KNOCKOUT MATCH ID MAPPING ──
-// FIFA 2026 bracket match IDs from the schedule JSON
+
 export const R32_IDS = [537415,537416,537417,537418,537419,537420,537421,537422,537423,537424,537425,537426,537427,537428,537429,537430];
 export const R16_IDS = [537375,537376,537377,537378,537379,537380,537381,537382];
 export const QF_IDS  = [537383,537384,537385,537386];
@@ -81,34 +81,23 @@ export const SF_IDS  = [537387,537388];
 export const THIRD_ID = 537389;
 export const FINAL_ID = 537390;
 
-// ── WINNER ADVANCEMENT MAP ──
-// Defines which match winners advance to which next-round match slots.
-// Format: winnerMatchId → { nextMatchId, side }
 const ADVANCEMENT_MAP: Record<number, { nextMatchId: number; side: 'home' | 'away' }> = {};
 
 // R32 winners → R16
-// R32-1 winner vs R32-2 winner → R16-1
 ADVANCEMENT_MAP[537415] = { nextMatchId: 537375, side: 'home' };
 ADVANCEMENT_MAP[537416] = { nextMatchId: 537375, side: 'away' };
-// R32-3 winner vs R32-4 winner → R16-2
 ADVANCEMENT_MAP[537417] = { nextMatchId: 537376, side: 'home' };
 ADVANCEMENT_MAP[537418] = { nextMatchId: 537376, side: 'away' };
-// R32-5 winner vs R32-6 winner → R16-3
 ADVANCEMENT_MAP[537419] = { nextMatchId: 537377, side: 'home' };
 ADVANCEMENT_MAP[537420] = { nextMatchId: 537377, side: 'away' };
-// R32-7 winner vs R32-8 winner → R16-4
 ADVANCEMENT_MAP[537421] = { nextMatchId: 537378, side: 'home' };
 ADVANCEMENT_MAP[537422] = { nextMatchId: 537378, side: 'away' };
-// R32-9 winner vs R32-10 winner → R16-5
 ADVANCEMENT_MAP[537423] = { nextMatchId: 537379, side: 'home' };
 ADVANCEMENT_MAP[537424] = { nextMatchId: 537379, side: 'away' };
-// R32-11 winner vs R32-12 winner → R16-6
 ADVANCEMENT_MAP[537425] = { nextMatchId: 537380, side: 'home' };
 ADVANCEMENT_MAP[537426] = { nextMatchId: 537380, side: 'away' };
-// R32-13 winner vs R32-14 winner → R16-7
 ADVANCEMENT_MAP[537427] = { nextMatchId: 537381, side: 'home' };
 ADVANCEMENT_MAP[537428] = { nextMatchId: 537381, side: 'away' };
-// R32-15 winner vs R32-16 winner → R16-8
 ADVANCEMENT_MAP[537429] = { nextMatchId: 537382, side: 'home' };
 ADVANCEMENT_MAP[537430] = { nextMatchId: 537382, side: 'away' };
 
@@ -128,15 +117,7 @@ ADVANCEMENT_MAP[537384] = { nextMatchId: 537387, side: 'away' };
 ADVANCEMENT_MAP[537385] = { nextMatchId: 537388, side: 'home' };
 ADVANCEMENT_MAP[537386] = { nextMatchId: 537388, side: 'away' };
 
-// ── FIFA 2026 BRACKET RULES ──
-// Round of 32 pairings based on FIFA's 12-group bracket
-function buildR32Mapping(
-  firsts: Record<string, string>,
-  seconds: Record<string, string>,
-  thirds: Record<string, string>
-): { matchId: number; home: string; away: string }[] {
-  // FIFA 2026 Ro32 bracket (simplified standard mapping)
-  // Maps group positions to specific Ro32 match slots
+function buildR32Mapping(firsts: Record<string, string>, seconds: Record<string, string>, thirds: Record<string, string>) {
   const pairings: { home: string; away: string }[] = [
     { home: firsts['A'],  away: thirds['C'] || thirds['D'] || thirds['E'] },
     { home: firsts['B'],  away: thirds['A'] || thirds['B'] || thirds['F'] },
@@ -174,9 +155,8 @@ export interface BracketSuggestion {
   isFilled: boolean;
 }
 
-export function generateBracketSuggestions(): BracketSuggestion[] {
-  const groupResults = calculateGroupResults();
-  const matrix = getMatrix();
+export function generateBracketSuggestionsPure(matrix: MatrixMatch[]): BracketSuggestion[] {
+  const groupResults = calculateGroupResults(matrix);
 
   const firsts: Record<string, string> = {};
   const seconds: Record<string, string> = {};
@@ -216,25 +196,9 @@ export function generateBracketSuggestions(): BracketSuggestion[] {
   return suggestions;
 }
 
-/** Apply manual team assignment to a knockout match slot */
-export function assignKnockoutTeam(matchId: number, side: 'home' | 'away', teamCode: string, teamName: string): boolean {
-  const matrix = getMatrixRef();
-  const idx = matrix.findIndex(m => m.id === matchId);
-  if (idx === -1) return false;
-
-  if (side === 'home') {
-    matrix[idx] = { ...matrix[idx], homeTeam: teamCode, homeTeamName: teamName };
-  } else {
-    matrix[idx] = { ...matrix[idx], awayTeam: teamCode, awayTeamName: teamName };
-  }
-
-  syncMatrix();
-  return true;
-}
-
 /** Get group winners for the admin UI */
-export function getGroupWinners() {
-  const groupResults = calculateGroupResults();
+export function getGroupWinnersPure(matrix: MatrixMatch[]) {
+  const groupResults = calculateGroupResults(matrix);
   return groupResults.map(g => ({
     group: g.group,
     first: g.teams[0] || null,
@@ -243,16 +207,15 @@ export function getGroupWinners() {
   }));
 }
 
-/** Auto-fill Ro32 from group results using FIFA 2026 bracket rules */
-export function seedKnockoutFromGroupResults(): { filled: number; errors: string[]; details: string[] } {
+/** Auto-fill Ro32 from group results using FIFA 2026 bracket rules. Returns matchId mappings. */
+export function seedKnockoutFromGroupResultsPure(matrix: MatrixMatch[]): { filled: number; errors: string[]; details: string[]; updates: { matchId: number; side: 'home' | 'away'; code: string; name: string }[] } {
   const errors: string[] = [];
   const details: string[] = [];
-  let filled = 0;
+  const updates: { matchId: number; side: 'home' | 'away'; code: string; name: string }[] = [];
 
-  const groupResults = calculateGroupResults();
+  const groupResults = calculateGroupResults(matrix);
   const nameMap: Record<string, string> = {};
 
-  // Build lookups
   const firsts: Record<string, string> = {};
   const seconds: Record<string, string> = {};
   for (const g of groupResults) {
@@ -261,36 +224,29 @@ export function seedKnockoutFromGroupResults(): { filled: number; errors: string
     if (g.teams[2]) { nameMap[g.teams[2].code] = g.teams[2].name; }
   }
 
-  // Check all groups have results
   for (const letter of 'ABCDEFGHIJKL') {
     if (!firsts[letter]) {
-      errors.push(`Group ${letter}: no 1st place team found (group may not be complete)`);
+      errors.push(`Group ${letter}: no 1st place team found`);
     }
   }
   if (errors.length > 0) {
-    return { filled: 0, errors, details };
+    return { filled: 0, errors, details, updates };
   }
 
-  // Get best 3rd placed teams
   const thirdsList = getBestThirdPlaced(groupResults);
   const thirds: Record<string, string> = {};
   thirdsList.forEach(t => { thirds[t.group] = t.code; nameMap[t.code] = t.name; });
 
-  // Build Ro32 pairings using FIFA 2026 bracket rules
   const r32Mappings = buildR32Mapping(firsts, seconds, thirds);
 
-  // Apply to matrix
   for (const mapping of r32Mappings) {
     if (mapping.home === 'TBD' || mapping.away === 'TBD') continue;
-    const success = assignKnockoutTeam(mapping.matchId, 'home', mapping.home, nameMap[mapping.home] || mapping.home);
-    if (success) {
-      assignKnockoutTeam(mapping.matchId, 'away', mapping.away, nameMap[mapping.away] || mapping.away);
-      details.push(`R32: ${mapping.home} vs ${mapping.away} → [${mapping.matchId}]`);
-      filled++;
-    }
+    updates.push({ matchId: mapping.matchId, side: 'home', code: mapping.home, name: nameMap[mapping.home] || mapping.home });
+    updates.push({ matchId: mapping.matchId, side: 'away', code: mapping.away, name: nameMap[mapping.away] || mapping.away });
+    details.push(`R32: ${mapping.home} vs ${mapping.away} → [${mapping.matchId}]`);
   }
 
-  return { filled, errors, details };
+  return { filled: Math.floor(updates.length / 2), errors, details, updates };
 }
 
 /** Parse pasted bracket seeding text */
@@ -299,7 +255,6 @@ export function parseBracketSeed(text: string): { matchId: number; home: string;
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
   for (const line of lines) {
-    // Format: "R32-1: MEX vs NED" or "537415: MEX vs NED"
     const match = line.match(/^(?:R32-(\d+)|(\d+))\s*:\s*(.+?)\s+vs\s+(.+)/i);
     if (match) {
       let matchId: number;
@@ -320,6 +275,11 @@ export function parseBracketSeed(text: string): { matchId: number; home: string;
   return results;
 }
 
+/**
+ * Auto-advance knockout winners to next-round match slots.
+ * Returns list of slot assignments to apply.
+ */
+/** Apply parsed bracket seeds to the matrix (backward-compatible — uses storage) */
 export function applyBracketSeed(seeds: { matchId: number; home: string; homeName: string; away: string; awayName: string }[]): number {
   let filled = 0;
   for (const s of seeds) {
@@ -330,17 +290,10 @@ export function applyBracketSeed(seeds: { matchId: number; home: string; homeNam
   return filled;
 }
 
-/**
- * Auto-advance knockout winners to next-round match slots.
- * Call this after pasting scores for a knockout round.
- * Reads all finished knockout matches, determines winners, and fills their next-round slots.
- */
-export function autoAdvanceKnockoutWinners(): { advanced: number; details: string[] } {
-  const matrix = getMatrix();
+export function autoAdvanceKnockoutWinnersPure(matrix: MatrixMatch[]): { advanced: number; details: string[]; updates: { matchId: number; side: 'home' | 'away'; code: string; name: string }[] } {
   const details: string[] = [];
-  let advanced = 0;
+  const updates: { matchId: number; side: 'home' | 'away'; code: string; name: string }[] = [];
 
-  // Find all finished knockout matches
   const finishedKo = matrix.filter(m => {
     if (m.round.startsWith('GROUP_')) return false;
     if (m.homeGoals === null || m.awayGoals === null) return false;
@@ -351,7 +304,6 @@ export function autoAdvanceKnockoutWinners(): { advanced: number; details: strin
     const adv = ADVANCEMENT_MAP[match.id];
     if (!adv) continue;
 
-    // Determine winner
     const winner = match.homeGoals! > match.awayGoals!
       ? { code: match.homeTeam, name: match.homeTeamName }
       : match.homeGoals! < match.awayGoals!
@@ -360,26 +312,20 @@ export function autoAdvanceKnockoutWinners(): { advanced: number; details: strin
 
     if (!winner || winner.code === 'None' || winner.code === null) continue;
 
-    // Advance winner to next round
     const nextMatch = matrix.find(m => m.id === adv.nextMatchId);
     if (!nextMatch) continue;
 
-    // Check if slot is already filled with the same team
     const currentTeam = adv.side === 'home' ? nextMatch.homeTeam : nextMatch.awayTeam;
-    if (currentTeam === winner.code) {
-      // Already correctly filled — count as done but don't duplicate
-      continue;
-    }
+    if (currentTeam === winner.code) continue;
 
-    assignKnockoutTeam(adv.nextMatchId, adv.side, winner.code, winner.name || winner.code);
+    updates.push({ matchId: adv.nextMatchId, side: adv.side, code: winner.code, name: winner.name || winner.code });
 
     const roundLabel = match.round.replace(/_/g, ' ');
     const nextRoundLabel = nextMatch.round.replace(/_/g, ' ');
     details.push(`${winner.code} advances: ${roundLabel} [${match.id}] → ${nextRoundLabel} [${adv.nextMatchId}] (${adv.side})`);
-    advanced++;
   }
 
-  // Handle SF losers → Third Place match
+  // SF losers → Third Place
   for (const match of finishedKo) {
     if (!match.round.includes('SEMI') || match.homeGoals === null || match.awayGoals === null) continue;
 
@@ -391,21 +337,34 @@ export function autoAdvanceKnockoutWinners(): { advanced: number; details: strin
 
     if (!loser || loser.code === 'None' || loser.code === null) continue;
 
-    // Determine which side of the third place match
-    // SF-1 (537387) loser → Third Place home
-    // SF-2 (537388) loser → Third Place away
     const side: 'home' | 'away' = match.id === 537387 ? 'home' : 'away';
-
     const thirdMatch = matrix.find(m => m.id === THIRD_ID);
     if (!thirdMatch) continue;
 
     const currentTeam = side === 'home' ? thirdMatch.homeTeam : thirdMatch.awayTeam;
     if (currentTeam === loser.code) continue;
 
-    assignKnockoutTeam(THIRD_ID, side, loser.code, loser.name || loser.code);
+    updates.push({ matchId: THIRD_ID, side, code: loser.code, name: loser.name || loser.code });
     details.push(`${loser.code} to 3rd Place: SF [${match.id}] → THIRD_PLACE [${THIRD_ID}] (${side})`);
-    advanced++;
   }
 
-  return { advanced, details };
+  return { advanced: updates.length, details, updates };
+}
+
+// ── BACKWARD-COMPATIBLE WRAPPERS (no matrix param — read from storage) ──
+
+export function generateBracketSuggestions(): ReturnType<typeof generateBracketSuggestionsPure> {
+  return generateBracketSuggestionsPure(getMatrix());
+}
+
+export function getGroupWinners(): ReturnType<typeof getGroupWinnersPure> {
+  return getGroupWinnersPure(getMatrix());
+}
+
+export function seedKnockoutFromGroupResults(): ReturnType<typeof seedKnockoutFromGroupResultsPure> {
+  return seedKnockoutFromGroupResultsPure(getMatrix());
+}
+
+export function autoAdvanceKnockoutWinners(): ReturnType<typeof autoAdvanceKnockoutWinnersPure> {
+  return autoAdvanceKnockoutWinnersPure(getMatrix());
 }
